@@ -1,0 +1,55 @@
+{
+  "name": "open-clowk",
+  "version": "0.1.0",
+  "description": "A private, configurable terminal-time break intervention. Tic tac, MF.",
+  "license": "MIT",
+  "author": "Jourdan Lucente",
+  "type": "commonjs",
+  "bin": {
+    "open-clowk": "bin/open-clowk.js"
+  },
+  "files": [
+    "assets/",
+    "bin/",
+    "lib/",
+    "ui/",
+    "ASSET-PROVENANCE.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "MIGRATION.md",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jourdanlucente-maker/open-clowk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jourdanlucente-maker/open-clowk/issues"
+  },
+  "homepage": "https://github.com/jourdanlucente-maker/open-clowk#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "break-reminder",
+    "cli",
+    "terminal",
+    "privacy",
+    "wellness",
+    "clowk"
+  ],
+  "scripts": {
+    "check": "npm run test && npm run package:check",
+    "test": "node scripts/run-tests.js",
+    "package:check": "node scripts/package-canary.js",
+    "publish:dry-run": "npm publish --dry-run --ignore-scripts"
+  }
+}

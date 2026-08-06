@@ -1,6 +1,6 @@
 # Open Clowk configurable break intervention
 
-**Date:** 2026-08-06  
+**Date:** 2026-08-06
 **Status:** Captain-approved replacement contract
 
 ## Problem

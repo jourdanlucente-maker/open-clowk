@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Clowk — time escaped</title>
+  <style>
+    :root { color-scheme: dark; --ink: #fff5e6; --muted: #cdbba4; --orange: #ef6129; --green: #00b95d; --panel: #191411; --line: #47372a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 14% 8%, #57301c 0, #1b1511 38%, #090807 100%); color: var(--ink); font: 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    main { width: min(1180px, calc(100% - 32px)); min-height: 100vh; margin: auto; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: clamp(24px, 5vw, 72px); align-items: center; padding: 36px 0; }
+    .art { min-width: 0; }
+    .eyebrow { color: #ff9a62; letter-spacing: .14em; text-transform: uppercase; font-size: .78rem; }
+    h1 { margin: 12px 0 14px; font: 900 clamp(3.2rem, 8vw, 7.3rem)/.84 system-ui, sans-serif; letter-spacing: -.075em; }
+    h1 span { color: var(--orange); }
+    .lede { max-width: 620px; color: var(--muted); font-size: clamp(1rem, 2vw, 1.25rem); }
+    .scene { margin-top: 26px; display: grid; grid-template-columns: 1fr .82fr; gap: 12px; border-radius: 24px; overflow: hidden; background: var(--green); box-shadow: 0 24px 80px #0008; }
+    .scene img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; object-position: center; }
+    .choices { background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--line); border-radius: 22px; padding: clamp(22px, 4vw, 38px); box-shadow: 0 22px 70px #0007; }
+    h2 { margin: 0 0 8px; font: 800 clamp(1.6rem, 3vw, 2.35rem)/1.1 system-ui, sans-serif; }
+    .watching { color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+    .buttons { display: grid; gap: 12px; margin-top: 28px; }
+    button { width: 100%; border: 1px solid #7b5439; border-radius: 13px; padding: 15px 16px; background: #2b211b; color: var(--ink); font: 700 1rem ui-monospace, monospace; text-align: left; cursor: pointer; transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+    button:hover, button:focus-visible { transform: translateY(-2px); border-color: #ff9a62; outline: none; }
+    button.primary { background: var(--orange); color: #1a0d08; border-color: #ff9a62; }
+    button small { display: block; margin-top: 3px; color: currentColor; opacity: .75; font-weight: 500; }
+    #message { min-height: 52px; margin: 22px 0 0; color: #ffbe87; }
+    .privacy { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); color: #9f8b78; font-size: .76rem; }
+    @media (max-width: 780px) { main { grid-template-columns: 1fr; align-content: start; padding: 28px 0; } h1 { font-size: clamp(3.1rem, 17vw, 5.4rem); } .choices { margin-bottom: 24px; } }
+    @media (max-width: 390px) { main { width: min(100% - 20px, 1180px); } .scene { gap: 4px; border-radius: 16px; } .choices { padding: 19px; } }
+    @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="art">
+      <div class="eyebrow">{{THRESHOLD_MINUTES}} consecutive minutes · intervention 00</div>
+      <h1>OPEN <span>CLOWK</span></h1>
+      <p class="lede">The robot opened the clocks. The time escaped. You have a clean chance to stop.</p>
+      <div class="scene">
+        <img src="/assets/robot-crowbar.webp" alt="Orange Open Clowk robot holding its complete crowbar">
+        <img src="/assets/watch-open.webp" alt="Complete opened pocket watch with gears visible">
+      </div>
+    </section>
+    <section class="choices" aria-labelledby="choice-title">
+      <h2 id="choice-title">What happens next is yours.</h2>
+      <div class="watching">Watching process names: {{WATCHED_PROCESSES}}</div>
+      <div class="buttons">
+        <button class="primary" data-action="take-break">Take a break<small>Reset after the watched processes close.</small></button>
+        <button data-action="snooze">Snooze {{SNOOZE_MINUTES}} minutes<small>Delay the next intervention; nothing is blocked.</small></button>
+        <button data-action="keep-going">Keep going<small>Reset the full {{THRESHOLD_MINUTES}}-minute threshold.</small></button>
+      </div>
+      <p id="message" role="status" aria-live="polite">Tic tac, MF. No coercion. Just a door.</p>
+      <div class="privacy">Local loopback page. Process names only. No commands, terminal content, keys, files, prompts, telemetry, or forced process action.</div>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const token = new URLSearchParams(location.search).get('token') || '';
+    history.replaceState(null, '', '/');
+    const message = document.getElementById('message');
+    const copy = {
+      'take-break': 'Good. Close the watched processes when ready; the timer resets only then.',
+      snooze: 'Snoozed. The robot has put the crowbar down temporarily.',
+      'keep-going': 'Full threshold reset. Your choice, fully respected.',
+    };
+    for (const button of document.querySelectorAll('[data-action]')) {
+      button.addEventListener('click', async () => {
+        const action = button.dataset.action;
+        for (const item of document.querySelectorAll('button')) item.disabled = true;
+        try {
+          const response = await fetch(`/action/${action}`, {
+            method: 'POST',
+            headers: { 'X-Open-Clowk-Token': token },
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+          message.textContent = copy[action];
+        } catch (error) {
+          message.textContent = `Could not record the choice: ${error.message}`;
+          for (const item of document.querySelectorAll('button')) item.disabled = false;
+        }
+      });
+    }
+  </script>
+</body>
+</html>
