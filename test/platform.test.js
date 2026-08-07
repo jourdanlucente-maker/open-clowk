@@ -2,9 +2,11 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { EventEmitter } = require('node:events');
 const {
   browserCommand,
   listProcesses,
+  openBrowser,
   parseWindowsTasklist,
   processCommand,
 } = require('../lib/platform');
@@ -60,17 +62,46 @@ test('test-only process snapshots do not execute an operating-system command', a
   assert.deepEqual(names, ['codex', 'Terminal']);
 });
 
+function fakeLauncher(emit) {
+  return () => {
+    const child = new EventEmitter();
+    child.unref = () => {};
+    setImmediate(() => emit(child));
+    return child;
+  };
+}
+
 test('a failed browser launch rejects instead of silently losing the intervention', async () => {
-  const { openBrowser } = require('../lib/platform');
   await assert.rejects(openBrowser('http://127.0.0.1:1/?bootstrap=abc', {
     platform: 'linux',
     env: {},
-    spawnFn: () => {
-      const { EventEmitter } = require('node:events');
-      const child = new EventEmitter();
-      child.unref = () => {};
-      setImmediate(() => child.emit('error', new Error('spawn xdg-open ENOENT')));
-      return child;
-    },
+    spawnFn: fakeLauncher((child) => child.emit('error', new Error('spawn xdg-open ENOENT'))),
   }), /Could not launch xdg-open/);
+});
+
+test('a launcher that spawns but exits non-zero counts as a failed launch', async () => {
+  await assert.rejects(openBrowser('http://127.0.0.1:1/?bootstrap=abc', {
+    platform: 'linux',
+    env: {},
+    exitGraceMs: 500,
+    spawnFn: fakeLauncher((child) => {
+      child.emit('spawn');
+      child.emit('exit', 3, null);
+    }),
+  }), /xdg-open exited with code 3 without opening the break page/);
+});
+
+test('a launcher that exits cleanly or stays alive counts as opened', async () => {
+  const options = { platform: 'linux', env: {}, exitGraceMs: 50 };
+  await openBrowser('http://127.0.0.1:1/?bootstrap=abc', {
+    ...options,
+    spawnFn: fakeLauncher((child) => {
+      child.emit('spawn');
+      child.emit('exit', 0, null);
+    }),
+  });
+  await openBrowser('http://127.0.0.1:1/?bootstrap=abc', {
+    ...options,
+    spawnFn: fakeLauncher((child) => child.emit('spawn')),
+  });
 });

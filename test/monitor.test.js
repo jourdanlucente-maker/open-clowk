@@ -29,8 +29,9 @@ function fetchLocal(port, pathname, { method = 'GET', headers = {} } = {}) {
   });
 }
 
-async function harness(context, { watchedProcesses = ['codex'], browserOpener } = {}) {
+function stateFor(context, watchedProcesses) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'open-clowk-monitor-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const env = {
     OPEN_CLOWK_STATE_DIR: root,
     OPEN_CLOWK_MONITOR_TOKEN: TOKEN,
@@ -41,33 +42,51 @@ async function harness(context, { watchedProcesses = ['codex'], browserOpener } 
     version: 1, thresholdMinutes: 25, snoozeMinutes: 5, watchedProcesses,
   }, { env });
   acquireMonitorLock(TOKEN, { env });
+  return { env, root };
+}
 
+async function harness(context, {
+  watchedProcesses = ['codex'],
+  browserOpener,
+  processLister,
+  setIntervalFn,
+} = {}) {
+  const { env, root } = stateFor(context, watchedProcesses);
   const opened = [];
+  const exits = [];
   let clock = 1000;
   let tick;
-  let active = true;
   const monitor = await runMonitor({
     env,
     now: () => clock,
-    processLister: async () => (active ? [watchedProcesses[0]] : ['unrelated']),
+    processLister: processLister || (async () => [watchedProcesses[0]]),
     browserOpener: browserOpener || (async (url) => { opened.push(url); }),
-    setIntervalFn: (fn) => { tick = fn; return null; },
+    setIntervalFn: setIntervalFn || ((fn) => { tick = fn; return null; }),
     clearIntervalFn: () => {},
+    exitFn: (code) => exits.push(code),
   });
   context.after(() => {
     monitor.server.closeAllConnections?.();
     monitor.server.close();
-    fs.rmSync(root, { recursive: true, force: true });
   });
   return {
     env,
+    exits,
     monitor,
     opened,
+    root,
     port: monitor.server.address().port,
     advance: async (milliseconds) => { clock += milliseconds; await tick(); },
-    setActive: (value) => { active = value; },
+    tick: () => tick(),
     runtime: () => JSON.parse(fs.readFileSync(path.join(root, 'runtime.json'), 'utf8')),
   };
+}
+
+async function sessionFor(clowk) {
+  await clowk.advance(5000);
+  const bootstrap = new URL(clowk.opened.at(-1)).searchParams.get('bootstrap');
+  const redirect = await fetchLocal(clowk.port, `/?bootstrap=${bootstrap}`);
+  return { bootstrap, cookie: redirect.headers['set-cookie'][0].split(';')[0], redirect };
 }
 
 test('the launcher URL carries a single-use bootstrap exchanged for a loopback session', async (context) => {
@@ -115,14 +134,79 @@ test('the browser session cannot read configuration or stop the monitor', async 
   assert.equal(JSON.parse(health.body).tracker.mode, 'prompted');
 });
 
+test('another loopback origin cannot spend the session cookie on an action', async (context) => {
+  const clowk = await harness(context);
+  const { cookie } = await sessionFor(clowk);
+
+  const crossSite = await fetchLocal(clowk.port, '/action/keep-going', {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-site', Origin: 'http://127.0.0.1:5173' },
+  });
+  assert.equal(crossSite.status, 403);
+  const crossOriginOnly = await fetchLocal(clowk.port, '/action/keep-going', {
+    method: 'POST',
+    headers: { Cookie: cookie, Origin: 'http://127.0.0.1:5173' },
+  });
+  assert.equal(crossOriginOnly.status, 403);
+  const health = await fetchLocal(clowk.port, '/health', { headers: { 'X-Open-Clowk-Token': TOKEN } });
+  assert.equal(JSON.parse(health.body).tracker.mode, 'prompted');
+
+  const sameOrigin = await fetchLocal(clowk.port, '/action/snooze', {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin', Origin: `http://127.0.0.1:${clowk.port}` },
+  });
+  assert.equal(sameOrigin.status, 200);
+  assert.equal(JSON.parse(sameOrigin.body).result, 'snoozed');
+});
+
+test('a sample finishing after shutdown does not recreate runtime state', async (context) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let first = true;
+  const clowk = await harness(context, {
+    processLister: async () => {
+      if (first) {
+        first = false;
+        return ['codex'];
+      }
+      return gate;
+    },
+  });
+  const runtimeFile = path.join(clowk.root, 'runtime.json');
+  assert.equal(fs.existsSync(runtimeFile), true);
+
+  const pending = clowk.tick();
+  clowk.monitor.shutdown();
+  assert.equal(fs.existsSync(runtimeFile), false);
+  release(['codex']);
+  await pending;
+  assert.equal(fs.existsSync(runtimeFile), false);
+  assert.equal(fs.existsSync(path.join(clowk.root, 'monitor.lock')), false);
+});
+
+test('a failed post-listen bootstrap releases the lock instead of holding it forever', async (context) => {
+  const { env, root } = stateFor(context, ['codex']);
+  await assert.rejects(runMonitor({
+    env,
+    now: () => 1000,
+    processLister: async () => ['codex'],
+    browserOpener: async () => {},
+    setIntervalFn: () => { throw new Error('state directory is read-only'); },
+    clearIntervalFn: () => {},
+    exitFn: () => {},
+  }), /read-only/);
+  assert.equal(fs.existsSync(path.join(root, 'monitor.lock')), false);
+  assert.equal(fs.existsSync(path.join(root, 'runtime.json')), false);
+});
+
 test('the session ends when the intervention resolves, without a raw JSON 403', async (context) => {
   const clowk = await harness(context);
-  await clowk.advance(5000);
-  const bootstrap = new URL(clowk.opened[0]).searchParams.get('bootstrap');
-  const redirect = await fetchLocal(clowk.port, `/?bootstrap=${bootstrap}`);
-  const cookie = redirect.headers['set-cookie'][0].split(';')[0];
+  const { cookie } = await sessionFor(clowk);
 
-  const acted = await fetchLocal(clowk.port, '/action/keep-going', { method: 'POST', headers: { Cookie: cookie } });
+  const acted = await fetchLocal(clowk.port, '/action/keep-going', {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
+  });
   assert.equal(acted.status, 200);
   assert.equal(JSON.parse(acted.body).result, 'reset');
 

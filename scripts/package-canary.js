@@ -85,18 +85,22 @@ async function waitFor(predicate, message, timeout = 6000) {
   throw new Error(message);
 }
 
-function action(runtime, name) {
+function post(port, name, headers) {
   return new Promise((resolve, reject) => {
     const request = http.request({
-      hostname: '127.0.0.1', port: runtime.port, path: `/action/${name}`, method: 'POST',
-      headers: { 'X-Open-Clowk-Token': runtime.token }, timeout: 1500,
+      hostname: '127.0.0.1', port, path: `/action/${name}`, method: 'POST', headers, timeout: 1500, agent: false,
     }, (response) => {
       response.resume();
-      response.on('end', () => response.statusCode === 200 ? resolve() : reject(new Error(`HTTP ${response.statusCode}`)));
+      response.on('end', () => resolve(response.statusCode));
     });
     request.on('error', reject);
     request.end();
   });
+}
+
+async function action(runtime, name) {
+  const status = await post(runtime.port, name, { 'X-Open-Clowk-Token': runtime.token });
+  if (status !== 200) throw new Error(`HTTP ${status}`);
 }
 
 function get(url, cookie) {
@@ -176,6 +180,11 @@ async function main() {
     assert.equal(unauthenticated.status, 403);
     assert.match(unauthenticated.contentType, /text\/html/);
     assert.doesNotMatch(unauthenticated.body, /^\{"error"/);
+
+    const crossSite = await post(runtime.port, 'keep-going', {
+      Cookie: session, 'Sec-Fetch-Site': 'same-site', Origin: 'http://127.0.0.1:5173',
+    });
+    assert.equal(crossSite, 403, 'another loopback origin must not spend the session cookie');
 
     await action(runtime, 'keep-going');
     const resolved = await get(clean, session);

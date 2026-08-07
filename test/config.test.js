@@ -15,6 +15,7 @@ const {
   readMonitorLockRecord,
   readRuntime,
   reclaimAbandonedState,
+  releaseMonitorState,
   removeMonitorLock,
   runtimePath,
   stateDirectory,
@@ -72,11 +73,11 @@ test('the per-user monitor lock is exclusive and token-owned', (context) => {
 
 test('the monitor lock records its owning process and can be reclaimed by it', (context) => {
   const env = isolatedState(context, 'open-clowk-lock-pid-');
-  acquireMonitorLock('owner-a', { env, pid: 4321 });
-  assert.deepEqual(readMonitorLockRecord({ env }), { token: 'owner-a', pid: 4321 });
+  acquireMonitorLock('owner-a', { env, pid: 4321, nowFn: () => 7000 });
+  assert.deepEqual(readMonitorLockRecord({ env }), { token: 'owner-a', pid: 4321, startedAt: 7000 });
   assert.equal(claimMonitorLock('owner-b', { env, pid: 9999 }), false);
-  assert.equal(claimMonitorLock('owner-a', { env, pid: 9999 }), true);
-  assert.deepEqual(readMonitorLockRecord({ env }), { token: 'owner-a', pid: 9999 });
+  assert.equal(claimMonitorLock('owner-a', { env, pid: 9999, nowFn: () => 8000 }), true);
+  assert.deepEqual(readMonitorLockRecord({ env }), { token: 'owner-a', pid: 9999, startedAt: 8000 });
 });
 
 test('abandoned lock and runtime state are reclaimed by owner liveness, never blindly', (context) => {
@@ -92,6 +93,40 @@ test('abandoned lock and runtime state are reclaimed by owner liveness, never bl
   assert.equal(reclaimAbandonedState({ env, killFn: dead }), true);
   assert.equal(readMonitorLock({ env }), null);
   assert.equal(readRuntime({ env }), null);
+});
+
+test('a lock left before the last boot is reclaimed even when its pid was reused', (context) => {
+  const env = isolatedState(context, 'open-clowk-boot-');
+  acquireMonitorLock('gone', { env, pid: 4321, nowFn: () => 1000 });
+  const reused = { env, killFn: () => true, uptimeFn: () => 60, nowFn: () => 10000000 };
+  assert.equal(reclaimAbandonedState(reused), true);
+  assert.equal(readMonitorLock({ env }), null);
+});
+
+test('a lock taken after the last boot by a live owner is never stolen', (context) => {
+  const env = isolatedState(context, 'open-clowk-live-');
+  acquireMonitorLock('serving', { env, pid: 4321, nowFn: () => 9990000 });
+  const live = { env, killFn: () => true, uptimeFn: () => 60, nowFn: () => 10000000 };
+  assert.equal(reclaimAbandonedState(live), false);
+  assert.equal(readMonitorLock({ env }), 'serving');
+});
+
+test('stop clears a lock whose owner is not serving the control channel', (context) => {
+  const env = isolatedState(context, 'open-clowk-release-');
+  acquireMonitorLock('wedged', { env, pid: process.pid });
+  writeRuntime({ version: 1, pid: process.pid, token: 'wedged', port: 1 }, { env });
+  assert.equal(reclaimAbandonedState({ env }), false);
+  assert.equal(releaseMonitorState({ env }), true);
+  assert.equal(readMonitorLock({ env }), null);
+  assert.equal(readRuntime({ env }), null);
+});
+
+test('removing an already-removed lock reports false instead of throwing', (context) => {
+  const env = isolatedState(context, 'open-clowk-enoent-');
+  acquireMonitorLock('owner', { env });
+  assert.equal(removeMonitorLock('owner', { env }), true);
+  assert.equal(removeMonitorLock('owner', { env }), false);
+  assert.equal(releaseMonitorState({ env }), false);
 });
 
 test('a torn or corrupt runtime file reads as stopped instead of throwing', (context) => {
