@@ -55,7 +55,7 @@ open-clowk detect
 
 Commands:
 
-- `setup` — save whole-minute threshold, Snooze duration, and watched process names; add `--start` to start afterward.
+- `setup` — save whole-minute threshold, Snooze duration, and watched process names; add `--start` to start afterward. Stop a running monitor before reconfiguring it.
 - `detect` — list only currently visible process names.
 - `start` — start one detached per-user monitor; idempotent.
 - `stop` — ask that monitor to exit through its loopback control channel; idempotent.
@@ -92,7 +92,7 @@ Default state locations:
 - Linux: `${XDG_STATE_HOME:-~/.local/state}/open-clowk`
 - Windows: `%LOCALAPPDATA%\open-clowk`
 
-Use `OPEN_CLOWK_STATE_DIR` for isolated tests. `status` reports any monitor error verbatim under `Monitor error`; the message names the actual cause, which may be process detection (confirm `ps` on macOS/Linux or `tasklist.exe` on Windows), writing local state (confirm free space and write access to the state directory), or reading a packaged asset. Open Clowk does not request broader permissions as a fallback.
+Use `OPEN_CLOWK_STATE_DIR` for isolated tests. If `start` reports that the monitor did not become ready, the detached process writes why to `last-error.txt` in that same state directory. `status` reports any monitor error verbatim under `Monitor error`; the message names the actual cause, which may be process detection (confirm `ps` on macOS/Linux or `tasklist.exe` on Windows), writing local state (confirm free space and write access to the state directory), or reading a packaged asset. Open Clowk does not request broader permissions as a fallback.
 
 A launch counts as successful only when the break page actually reaches the loopback server, so a launcher that reports a non-zero exit after handing the URL over never causes a second tab. If the page does not connect, Open Clowk retries at most three more times — after 5, 15, and 30 seconds — then stops relaunching for that cycle, keeps running, and reports the reason under `status` as a break page launch error. It opens no further tabs until the watched processes close and reset the cycle. If you see that error, confirm `open`, `xdg-open`, or `rundll32.exe` can launch your default browser.
 
