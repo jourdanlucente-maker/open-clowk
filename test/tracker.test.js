@@ -50,15 +50,15 @@ test('0.1.0 deliberately counts wall-clock time across system sleep', () => {
   assert.equal(tracker.snapshot().consecutiveMs, 28805000);
 });
 
-test('a failed break page launch releases the prompt so the next sample retries', () => {
+test('one threshold crossing prompts exactly once until the cycle resets', () => {
   const tracker = new BreakTracker({ thresholdMs: 60000, snoozeMs: 300000 });
   tracker.sample({ now: 0, active: true });
   assert.equal(tracker.sample({ now: 60000, active: true }), 'prompt');
-  assert.equal(tracker.releasePrompt(), true);
-  assert.equal(tracker.snapshot().mode, 'tracking');
-  assert.equal(tracker.sample({ now: 65000, active: true }), 'prompt');
-  assert.equal(tracker.releasePrompt(), true);
-  assert.equal(tracker.releasePrompt(), false);
+  assert.equal(tracker.sample({ now: 65000, active: true }), 'prompted');
+  assert.equal(tracker.sample({ now: 120000, active: true }), 'prompted');
+  assert.equal(tracker.sample({ now: 120001, active: false }), 'reset');
+  tracker.sample({ now: 130000, active: true });
+  assert.equal(tracker.sample({ now: 190000, active: true }), 'prompt');
 });
 
 test('Keep going resets the full threshold without killing anything', () => {

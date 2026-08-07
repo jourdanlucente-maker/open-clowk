@@ -54,8 +54,10 @@ async function harness(context, {
   const { env, root } = stateFor(context, watchedProcesses);
   const opened = [];
   const exits = [];
+  const timers = [];
   let clock = 1000;
   let tick;
+  let nextTimerId = 1;
   const monitor = await runMonitor({
     env,
     now: () => clock,
@@ -63,6 +65,16 @@ async function harness(context, {
     browserOpener: browserOpener || (async (url) => { opened.push(url); }),
     setIntervalFn: setIntervalFn || ((fn) => { tick = fn; return null; }),
     clearIntervalFn: () => {},
+    setTimeoutFn: (fn, delay) => {
+      const id = nextTimerId;
+      nextTimerId += 1;
+      timers.push({ id, fn, delay });
+      return id;
+    },
+    clearTimeoutFn: (id) => {
+      const index = timers.findIndex((timer) => timer.id === id);
+      if (index !== -1) timers.splice(index, 1);
+    },
     exitFn: (code) => exits.push(code),
   });
   context.after(() => {
@@ -75,9 +87,17 @@ async function harness(context, {
     monitor,
     opened,
     root,
+    timers,
     port: monitor.server.address().port,
     advance: async (milliseconds) => { clock += milliseconds; await tick(); },
     tick: () => tick(),
+    pendingDelays: () => timers.map((timer) => timer.delay),
+    fireRelaunch: async () => {
+      const timer = timers.shift();
+      if (!timer) throw new Error('no relaunch is scheduled');
+      await timer.fn();
+      return timer.delay;
+    },
     runtime: () => JSON.parse(fs.readFileSync(path.join(root, 'runtime.json'), 'utf8')),
   };
 }
@@ -217,25 +237,78 @@ test('the session ends when the intervention resolves, without a raw JSON 403', 
   assert.doesNotMatch(after.body, /^\{"error"/);
 });
 
-test('a failed break page launch is reported and retried instead of being lost', async (context) => {
-  let attempts = 0;
+test('a page that connects counts as launched even when the launcher exits non-zero', async (context) => {
+  const opened = [];
   const clowk = await harness(context, {
-    browserOpener: async () => {
-      attempts += 1;
-      if (attempts < 3) throw new Error('Could not launch xdg-open: spawn xdg-open ENOENT');
+    browserOpener: async (url) => {
+      opened.push(url);
+      throw new Error('xdg-open exited with code 3 without opening the break page.');
     },
   });
   await clowk.advance(5000);
-  assert.equal(attempts, 1);
-  assert.equal(clowk.runtime().tracker.mode, 'tracking');
-  assert.match(clowk.runtime().lastBrowserError, /xdg-open/);
+  assert.equal(opened.length, 1);
+  assert.match(clowk.runtime().lastBrowserError, /exited with code 3/);
+  assert.deepEqual(clowk.pendingDelays(), [5000]);
+
+  const bootstrap = new URL(opened[0]).searchParams.get('bootstrap');
+  const redirect = await fetchLocal(clowk.port, `/?bootstrap=${bootstrap}`);
+  assert.equal(redirect.status, 302);
+
+  assert.deepEqual(clowk.pendingDelays(), []);
+  await clowk.advance(5000);
+  assert.equal(opened.length, 1);
+  const health = await fetchLocal(clowk.port, '/health', { headers: { 'X-Open-Clowk-Token': TOKEN } });
+  assert.equal(JSON.parse(health.body).lastBrowserError, null);
+});
+
+test('a page that never connects is relaunched exactly three times at 5s, 15s and 30s', async (context) => {
+  const opened = [];
+  const clowk = await harness(context, { browserOpener: async (url) => { opened.push(url); } });
+  await clowk.advance(5000);
+  assert.equal(opened.length, 1);
+
+  assert.equal(await clowk.fireRelaunch(), 5000);
+  assert.equal(opened.length, 2);
+  assert.equal(await clowk.fireRelaunch(), 15000);
+  assert.equal(opened.length, 3);
+  assert.equal(await clowk.fireRelaunch(), 30000);
+  assert.equal(opened.length, 4);
+
+  assert.deepEqual(clowk.pendingDelays(), []);
+  assert.match(clowk.runtime().lastBrowserError, /did not open after 4 attempts/);
+  assert.match(clowk.runtime().lastBrowserError, /still running/);
+  assert.equal(clowk.runtime().tracker.mode, 'prompted');
 
   await clowk.advance(5000);
-  assert.equal(attempts, 2);
   await clowk.advance(5000);
-  assert.equal(attempts, 3);
-  assert.equal(clowk.runtime().tracker.mode, 'prompted');
-  assert.equal(clowk.runtime().lastBrowserError, null);
+  assert.equal(opened.length, 4);
+  assert.deepEqual(clowk.pendingDelays(), []);
+  assert.equal(new Set(opened.map((url) => new URL(url).searchParams.get('bootstrap'))).size, 4);
+});
+
+test('closing the watched processes resets an exhausted launch cycle', async (context) => {
+  const opened = [];
+  let active = true;
+  const clowk = await harness(context, {
+    processLister: async () => (active ? ['codex'] : ['unrelated']),
+    browserOpener: async (url) => { opened.push(url); },
+  });
+  await clowk.advance(5000);
+  await clowk.fireRelaunch();
+  await clowk.fireRelaunch();
+  await clowk.fireRelaunch();
+  assert.equal(opened.length, 4);
+  assert.match(clowk.runtime().lastBrowserError, /did not open after 4 attempts/);
+
+  active = false;
+  await clowk.advance(5000);
+  assert.equal(clowk.runtime().tracker.mode, 'tracking');
+
+  active = true;
+  await clowk.advance(5000);
+  await clowk.advance(5000);
+  assert.equal(opened.length, 5);
+  assert.deepEqual(clowk.pendingDelays(), [5000]);
 });
 
 test('watched names containing replacement patterns render literally', async (context) => {
