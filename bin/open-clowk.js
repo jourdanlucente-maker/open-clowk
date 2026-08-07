@@ -10,6 +10,8 @@ const {
   summary,
 } = require('../lib/clowk');
 
+const { version } = require('../package.json');
+
 const ORANGE = '\x1b[38;5;208m';
 const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';
@@ -38,7 +40,7 @@ ${ORANGE}${BOLD}  ██    ██ ██   ██ ██      ████   �
 ${ORANGE}${BOLD}  ██    ██ ██████  █████   ██ ██  ██${RESET}
 ${ORANGE}${BOLD}  ██    ██ ██      ██      ██  ██ ██${RESET}
 ${ORANGE}${BOLD}   ██████  ██      ███████ ██   ████${RESET}
-${BOLD}   C L O W K${RESET}  ${DIM}· the anti-wellness agent · v1.0.0${RESET}
+${BOLD}   C L O W K${RESET}  ${DIM}· the anti-wellness agent · v${version}${RESET}
 `;
 
 async function main() {
