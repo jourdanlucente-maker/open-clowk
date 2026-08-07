@@ -286,6 +286,58 @@ test('a page that never connects is relaunched exactly three times at 5s, 15s an
   assert.equal(new Set(opened.map((url) => new URL(url).searchParams.get('bootstrap'))).size, 4);
 });
 
+test('a slow first tab still authenticates after later relaunches were issued', async (context) => {
+  const opened = [];
+  const clowk = await harness(context, { browserOpener: async (url) => { opened.push(url); } });
+  await clowk.advance(5000);
+  const first = new URL(opened[0]).searchParams.get('bootstrap');
+  await clowk.fireRelaunch();
+  await clowk.fireRelaunch();
+  assert.equal(opened.length, 3);
+
+  const redirect = await fetchLocal(clowk.port, `/?bootstrap=${first}`);
+  assert.equal(redirect.status, 302);
+  const cookie = redirect.headers['set-cookie'][0].split(';')[0];
+  const page = await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } });
+  assert.equal(page.status, 200);
+  assert.match(page.body, /Take a break/);
+
+  assert.deepEqual(clowk.pendingDelays(), []);
+  await clowk.advance(5000);
+  assert.equal(opened.length, 3);
+
+  const replay = await fetchLocal(clowk.port, `/?bootstrap=${first}`);
+  assert.equal(replay.status, 403);
+});
+
+test('every tab opened for one cycle keeps its own working session', async (context) => {
+  const opened = [];
+  const clowk = await harness(context, { browserOpener: async (url) => { opened.push(url); } });
+  await clowk.advance(5000);
+  await clowk.fireRelaunch();
+  assert.equal(opened.length, 2);
+
+  const cookies = [];
+  for (const url of opened) {
+    const redirect = await fetchLocal(clowk.port, `/?bootstrap=${new URL(url).searchParams.get('bootstrap')}`);
+    assert.equal(redirect.status, 302);
+    cookies.push(redirect.headers['set-cookie'][0].split(';')[0]);
+  }
+  assert.equal(new Set(cookies).size, 2);
+  for (const cookie of cookies) {
+    assert.equal((await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } })).status, 200);
+  }
+
+  const acted = await fetchLocal(clowk.port, '/action/keep-going', {
+    method: 'POST',
+    headers: { Cookie: cookies[0], 'Sec-Fetch-Site': 'same-origin' },
+  });
+  assert.equal(acted.status, 200);
+  for (const cookie of cookies) {
+    assert.equal((await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } })).status, 403);
+  }
+});
+
 test('closing the watched processes resets an exhausted launch cycle', async (context) => {
   const opened = [];
   let active = true;
