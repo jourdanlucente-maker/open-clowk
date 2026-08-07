@@ -108,7 +108,7 @@ npm run check
 npm run publish:dry-run
 ```
 
-The package canary packs the exact tarball, checks its allowlist and executable, performs a publish dry-run, installs into a temporary global prefix with temporary home/app-data/state, starts the real detached monitor in explicit test mode, observes the automatic loopback page, exercises an action, stops cleanly, uninstalls, and reinstalls the same tarball.
+The package canary packs the exact tarball, checks its allowlist and executable, performs a publish dry-run, installs into a temporary global prefix with temporary home/app-data/state, starts the real detached monitor in explicit test mode, observes the automatic loopback page, exercises an action, stops cleanly, uninstalls, and reinstalls the same tarball. A Windows checkout cannot carry the executable bit, so on Windows the canary checks the packed entrypoint for its shebang and readable mode only and says so in its output; publish from macOS or Linux.
 
 ## License
 

@@ -20,8 +20,20 @@ const EXPECTED = [
 
 function run(command, args, { cwd = ROOT, env = process.env, allowFailure = false } = {}) {
   const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 120000, shell: false });
-  if (!allowFailure) assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+  if (!allowFailure) {
+    assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
+  }
   return result;
+}
+
+const NPM_CLI = /npm-cli\.js$/.test(process.env.npm_execpath || '') ? process.env.npm_execpath : null;
+
+// Windows ships npm as npm.cmd, which Node refuses to spawn without a shell, so a bare
+// `npm` never resolves there. Prefer the npm entrypoint already running this script.
+function npm(args, options) {
+  if (NPM_CLI) return run(process.execPath, [NPM_CLI, ...args], options);
+  if (process.platform === 'win32') return run('cmd.exe', ['/d', '/s', '/c', 'npm', ...args], options);
+  return run('npm', args, options);
 }
 
 function parseOctal(buffer, start, length) {
@@ -131,19 +143,22 @@ async function main() {
   try {
     const packDir = path.join(root, 'pack');
     fs.mkdirSync(packDir);
-    const metadata = JSON.parse(run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packDir], { env }).stdout)[0];
+    const metadata = JSON.parse(npm(['pack', '--json', '--ignore-scripts', '--pack-destination', packDir], { env }).stdout)[0];
     const tarball = path.join(packDir, metadata.filename);
     assert.equal(metadata.name, 'open-clowk');
     assert.equal(metadata.version, '0.1.0');
     const packed = entries(tarball);
     assert.deepEqual(packed.map((entry) => entry.name).sort(), EXPECTED);
     const entrypoint = packed.find((entry) => entry.name === 'package/bin/open-clowk.js');
-    assert.equal(entrypoint.mode & 0o111, 0o111);
+    // A Windows checkout cannot carry the executable bit, so npm packs the entrypoint 0o644 there
+    // and npm's own shim makes it runnable; the archived mode is only meaningful off Windows.
+    if (process.platform === 'win32') assert.equal(entrypoint.mode & 0o444, 0o444);
+    else assert.equal(entrypoint.mode & 0o111, 0o111);
     assert.ok(entrypoint.content.toString().startsWith('#!/usr/bin/env node\n'));
     assert.ok(packed.every((entry) => !entry.content.toString().includes('https://d8j0ntlcm91z4.cloudfront.net')));
 
-    run('npm', ['publish', '--dry-run', '--json', '--ignore-scripts'], { env });
-    run('npm', ['install', '--global', '--prefix', prefix, tarball, '--ignore-scripts', '--offline', '--no-audit', '--no-fund'], { env });
+    npm(['publish', '--dry-run', '--json', '--ignore-scripts'], { env });
+    npm(['install', '--global', '--prefix', prefix, tarball, '--ignore-scripts', '--offline', '--no-audit', '--no-fund'], { env });
     executable = binary(prefix);
     assert.match(cli(executable, ['--help'], env).stdout, /setup.*detect.*start.*stop.*status/s);
     assert.match(cli(executable, ['detect'], env).stdout, /codex/);
@@ -193,15 +208,18 @@ async function main() {
     assert.match(cli(executable, ['stop'], env).stdout, /Monitor stopped/);
     assert.match(cli(executable, ['stop'], env).stdout, /already stopped/);
 
-    run('npm', ['uninstall', '--global', '--prefix', prefix, 'open-clowk', '--offline', '--no-audit', '--no-fund'], { env });
+    npm(['uninstall', '--global', '--prefix', prefix, 'open-clowk', '--offline', '--no-audit', '--no-fund'], { env });
     assert.equal(fs.existsSync(executable), false);
-    run('npm', ['install', '--global', '--prefix', prefix, tarball, '--ignore-scripts', '--offline', '--no-audit', '--no-fund'], { env });
+    npm(['install', '--global', '--prefix', prefix, tarball, '--ignore-scripts', '--offline', '--no-audit', '--no-fund'], { env });
     assert.match(cli(binary(prefix), ['--version'], env).stdout, /0\.1\.0/);
     console.log(`package canary: PASS ${metadata.filename} (${packed.length} allowlisted files)`);
+    if (process.platform === 'win32') {
+      console.log('package canary: NOTE Windows cannot carry the executable bit into a checkout, so the packed entrypoint mode was checked as readable only');
+    }
     console.log('package canary: PASS setup, detect, start x2, automatic break page, single-use bootstrap, session reload, action, session expiry, status, stop x2, uninstall, reinstall');
   } finally {
     if (executable && fs.existsSync(executable)) cli(executable, ['stop'], env, true);
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 
