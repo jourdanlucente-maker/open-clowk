@@ -1,0 +1,5 @@
+# Security
+
+Report vulnerabilities through [GitHub private security advisories](https://github.com/jourdanlucente-maker/open-clowk/security/advisories/new), including version, platform, reproduction, and impact. Do not include secrets or personal data in a public issue.
+
+The intended boundary is process names only, bounded local configuration/timing state, packaged local assets, and an authenticated loopback action channel. The browser reaches that channel through a single-use bootstrap credential exchanged for a short-lived `HttpOnly`, `SameSite=Strict` session cookie. The session expires after thirty minutes without an authenticated request, and immediately when the intervention resolves or the monitor stops; the open page keeps it alive with a loopback heartbeat that exposes no data and performs no action. Because loopback cookies are not port-scoped, cookie-authenticated actions and heartbeats additionally require a same-origin request, so a page served by another `127.0.0.1` port cannot spend the session. Configuration and monitor control require the file-protected per-run token instead.

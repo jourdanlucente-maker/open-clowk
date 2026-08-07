@@ -1,0 +1,8 @@
+node_modules/
+*.tgz
+.local-prefix/
+.source-assets/
+.task-tmp/
+npm-debug.log*
+coverage/
+.DS_Store
