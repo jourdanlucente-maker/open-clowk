@@ -99,13 +99,21 @@ function action(runtime, name) {
   });
 }
 
-function get(url) {
+function get(url, cookie) {
   return new Promise((resolve, reject) => {
-    const request = http.get(url, { timeout: 1500 }, (response) => {
+    const options = { timeout: 1500, agent: false };
+    if (cookie) options.headers = { Cookie: cookie };
+    const request = http.get(url, options, (response) => {
       let body = '';
       response.setEncoding('utf8');
       response.on('data', (chunk) => { body += chunk; });
-      response.on('end', () => resolve({ status: response.statusCode, body }));
+      response.on('end', () => resolve({
+        status: response.statusCode,
+        cookie: (response.headers['set-cookie'] || [])[0] || null,
+        location: response.headers.location || null,
+        contentType: response.headers['content-type'] || '',
+        body,
+      }));
     });
     request.on('error', reject);
   });
@@ -144,14 +152,34 @@ async function main() {
     assert.match(reconfigure.stderr, /Stop the running monitor/);
     await waitFor(() => fs.existsSync(env.OPEN_CLOWK_TEST_BROWSER_LOG), 'break page did not open');
     const url = fs.readFileSync(env.OPEN_CLOWK_TEST_BROWSER_LOG, 'utf8').trim();
-    assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/\?token=[a-f0-9]+$/);
-    const page = await get(url);
+    assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/\?bootstrap=[a-f0-9]+$/);
+    const clean = url.replace(/\?.*$/, '');
+    const runtime = JSON.parse(fs.readFileSync(path.join(env.OPEN_CLOWK_STATE_DIR, 'runtime.json'), 'utf8'));
+    assert.ok(!url.includes(runtime.token), 'launcher URL must not expose the control token');
+
+    const bootstrapped = await get(url);
+    assert.equal(bootstrapped.status, 302);
+    assert.equal(bootstrapped.location, '/');
+    assert.match(bootstrapped.cookie, /^open_clowk_session=[a-f0-9]+;.*HttpOnly.*SameSite=Strict/);
+    const session = bootstrapped.cookie.split(';')[0];
+
+    const page = await get(clean, session);
     assert.equal(page.status, 200);
     assert.match(page.body, /Take a break/);
-    const unauthenticated = await get(url.replace(/\?token=.*/, ''));
+    const reloaded = await get(clean, session);
+    assert.equal(reloaded.status, 200, 'the break page must reload while the intervention is unresolved');
+    assert.match(reloaded.body, /Take a break/);
+
+    const replayed = await get(url);
+    assert.equal(replayed.status, 403, 'the bootstrap credential must be single-use');
+    const unauthenticated = await get(clean);
     assert.equal(unauthenticated.status, 403);
-    const runtime = JSON.parse(fs.readFileSync(path.join(env.OPEN_CLOWK_STATE_DIR, 'runtime.json'), 'utf8'));
+    assert.match(unauthenticated.contentType, /text\/html/);
+    assert.doesNotMatch(unauthenticated.body, /^\{"error"/);
+
     await action(runtime, 'keep-going');
+    const resolved = await get(clean, session);
+    assert.equal(resolved.status, 403, 'the session must expire once the intervention resolves');
     assert.match(cli(executable, ['status'], env).stdout, /State: tracking/);
     assert.match(cli(executable, ['stop'], env).stdout, /Monitor stopped/);
     assert.match(cli(executable, ['stop'], env).stdout, /already stopped/);
@@ -161,7 +189,7 @@ async function main() {
     run('npm', ['install', '--global', '--prefix', prefix, tarball, '--ignore-scripts', '--offline', '--no-audit', '--no-fund'], { env });
     assert.match(cli(binary(prefix), ['--version'], env).stdout, /0\.1\.0/);
     console.log(`package canary: PASS ${metadata.filename} (${packed.length} allowlisted files)`);
-    console.log('package canary: PASS setup, detect, start x2, automatic break page, action, status, stop x2, uninstall, reinstall');
+    console.log('package canary: PASS setup, detect, start x2, automatic break page, single-use bootstrap, session reload, action, session expiry, status, stop x2, uninstall, reinstall');
   } finally {
     if (executable && fs.existsSync(executable)) cli(executable, ['stop'], env, true);
     fs.rmSync(root, { recursive: true, force: true });

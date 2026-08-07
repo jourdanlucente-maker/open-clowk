@@ -42,6 +42,25 @@ test('Snooze delays another prompt by exactly the configured duration', () => {
   assert.equal(tracker.sample({ now: 360000, active: true }), 'prompt');
 });
 
+test('0.1.0 deliberately counts wall-clock time across system sleep', () => {
+  const tracker = new BreakTracker({ thresholdMs: 300000, snoozeMs: 300000 });
+  tracker.sample({ now: 0, active: true });
+  tracker.sample({ now: 5000, active: true });
+  assert.equal(tracker.sample({ now: 28805000, active: true }), 'prompt');
+  assert.equal(tracker.snapshot().consecutiveMs, 28805000);
+});
+
+test('a failed break page launch releases the prompt so the next sample retries', () => {
+  const tracker = new BreakTracker({ thresholdMs: 60000, snoozeMs: 300000 });
+  tracker.sample({ now: 0, active: true });
+  assert.equal(tracker.sample({ now: 60000, active: true }), 'prompt');
+  assert.equal(tracker.releasePrompt(), true);
+  assert.equal(tracker.snapshot().mode, 'tracking');
+  assert.equal(tracker.sample({ now: 65000, active: true }), 'prompt');
+  assert.equal(tracker.releasePrompt(), true);
+  assert.equal(tracker.releasePrompt(), false);
+});
+
 test('Keep going resets the full threshold without killing anything', () => {
   const tracker = new BreakTracker({ thresholdMs: 60000, snoozeMs: 300000 });
   tracker.sample({ now: 0, active: true });

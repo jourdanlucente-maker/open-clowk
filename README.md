@@ -8,7 +8,11 @@ This repository is a release candidate. **The npm package is not published yet.*
 
 Open Clowk reads only process names from the operating system process list. It does not inspect keyboard input, commands, arguments, terminal contents, files, prompts, or network activity. It has no cloud service, account, analytics, telemetry, CDN, elevated privilege, postinstall daemon, login persistence, or forced process action. It never kills or blocks a process.
 
-The monitor serves its packaged break page through a random loopback-only `127.0.0.1` port and authenticates all actions with a per-run local token. Runtime images are included in the package.
+The monitor serves its packaged break page through a random loopback-only `127.0.0.1` port. The launched URL carries a single-use bootstrap credential: the first authenticated request consumes it, receives a short-lived `HttpOnly`, `SameSite=Strict` session cookie, and is redirected to a clean URL, so no reusable credential stays in a browser-launcher command line. Configuration and monitor control stay behind the file-protected per-run token that only `open-clowk` itself reads. Runtime images are included in the package.
+
+## System sleep in 0.1.0
+
+**0.1.0 counts wall-clock time across system sleep.** If a watched process is still open when the machine suspends, the suspended hours count toward the threshold, and the break page can appear immediately after wake. Suspend/resume handling is deliberately out of scope for this version. Close the watched process or run `open-clowk stop` before closing the lid if you do not want that time counted.
 
 ## Install
 
@@ -74,7 +78,7 @@ This is a human gate and must use an isolated state directory until installation
 1. Set `OPEN_CLOWK_STATE_DIR` to a new temporary directory.
 2. Run `open-clowk detect` and choose the exact terminal or CLI process name.
 3. Run `open-clowk setup --minutes 5 --watch <name> --snooze 5 --start`.
-4. Keep that selected process open for five consecutive real minutes.
+4. Keep that selected process open for five consecutive real minutes, with the machine awake for the whole trial.
 5. Confirm the local Open Clowk page appears automatically and that robot, complete crowbar, open clock, title, and all three actions remain visible at the actual desktop and a narrow/mobile browser width.
 6. Exercise each action in separate runs, confirm no process is killed, then run `open-clowk stop`.
 
@@ -88,7 +92,9 @@ Default state locations:
 - Linux: `${XDG_STATE_HOME:-~/.local/state}/open-clowk`
 - Windows: `%LOCALAPPDATA%\open-clowk`
 
-Use `OPEN_CLOWK_STATE_DIR` for isolated tests. If `status` shows a detection error, confirm `ps` (macOS/Linux) or `tasklist.exe` (Windows) is available. If the page cannot open, confirm `open`, `xdg-open`, or `rundll32.exe` can launch your default browser. Open Clowk does not request broader permissions as a fallback.
+Use `OPEN_CLOWK_STATE_DIR` for isolated tests. If `status` shows a detection error, confirm `ps` (macOS/Linux) or `tasklist.exe` (Windows) is available. If `status` shows a break page launch error, confirm `open`, `xdg-open`, or `rundll32.exe` can launch your default browser; the monitor keeps retrying the page on the next sample instead of silently skipping the intervention. Open Clowk does not request broader permissions as a fallback.
+
+The break page stays reloadable from its clean loopback URL while the intervention is unresolved. Once you choose Take a break, Snooze, or Keep going — or the monitor stops — the session ends and the URL reports that no intervention is active.
 
 ## Development
 

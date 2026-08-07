@@ -56,8 +56,6 @@
   </main>
   <script>
     'use strict';
-    const token = new URLSearchParams(location.search).get('token') || '';
-    history.replaceState(null, '', '/');
     const message = document.getElementById('message');
     const copy = {
       'take-break': 'Good. Close the watched processes when ready; the timer resets only then.',
@@ -71,7 +69,7 @@
         try {
           const response = await fetch(`/action/${action}`, {
             method: 'POST',
-            headers: { 'X-Open-Clowk-Token': token },
+            credentials: 'same-origin',
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);

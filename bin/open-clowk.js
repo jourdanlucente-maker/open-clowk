@@ -109,8 +109,9 @@ async function setup(args, env) {
   }
 }
 
-function detect(env) {
-  const names = [...new Set(listProcesses({ env }).map(normalizeProcessName))].sort((a, b) => a.localeCompare(b));
+async function detect(env) {
+  const visible = await listProcesses({ env });
+  const names = [...new Set(visible.map(normalizeProcessName))].sort((a, b) => a.localeCompare(b));
   console.log('Visible process names (names only; no commands or content):');
   for (const name of names) console.log(`  ${name}`);
   console.log(`\n${names.length} unique process name(s). Use exact names with open-clowk setup --watch.`);
@@ -132,6 +133,9 @@ async function status(env) {
     console.log(`Consecutive time: ${duration(result.health.tracker.consecutiveMs)}`);
     console.log(`State: ${result.health.tracker.mode}`);
     if (result.health.lastError) console.log(`Detection error: ${result.health.lastError}`);
+    if (result.health.lastBrowserError) {
+      console.log(`Break page launch error: ${result.health.lastBrowserError}`);
+    }
   }
 }
 

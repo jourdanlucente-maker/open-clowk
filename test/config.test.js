@@ -7,14 +7,26 @@ const path = require('node:path');
 const test = require('node:test');
 const {
   acquireMonitorLock,
+  claimMonitorLock,
   createConfig,
   expandWatchedProcesses,
   readConfig,
   readMonitorLock,
+  readMonitorLockRecord,
+  readRuntime,
+  reclaimAbandonedState,
   removeMonitorLock,
+  runtimePath,
   stateDirectory,
   writeConfig,
+  writeRuntime,
 } = require('../lib/config');
+
+function isolatedState(context, prefix) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return { OPEN_CLOWK_STATE_DIR: root };
+}
 
 test('public configuration accepts only whole minutes with minimum one', () => {
   assert.equal(createConfig({ thresholdMinutes: 1, watchedProcesses: ['codex'] }).thresholdMinutes, 1);
@@ -50,12 +62,53 @@ test('state locations are platform-specific and overrideable', () => {
 });
 
 test('the per-user monitor lock is exclusive and token-owned', (context) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'open-clowk-lock-'));
-  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const env = { OPEN_CLOWK_STATE_DIR: root };
+  const env = isolatedState(context, 'open-clowk-lock-');
   assert.equal(acquireMonitorLock('owner-a', { env }), true);
   assert.equal(acquireMonitorLock('owner-b', { env }), false);
   assert.equal(readMonitorLock({ env }), 'owner-a');
   assert.equal(removeMonitorLock('owner-b', { env }), false);
   assert.equal(removeMonitorLock('owner-a', { env }), true);
+});
+
+test('the monitor lock records its owning process and can be reclaimed by it', (context) => {
+  const env = isolatedState(context, 'open-clowk-lock-pid-');
+  acquireMonitorLock('owner-a', { env, pid: 4321 });
+  assert.deepEqual(readMonitorLockRecord({ env }), { token: 'owner-a', pid: 4321 });
+  assert.equal(claimMonitorLock('owner-b', { env, pid: 9999 }), false);
+  assert.equal(claimMonitorLock('owner-a', { env, pid: 9999 }), true);
+  assert.deepEqual(readMonitorLockRecord({ env }), { token: 'owner-a', pid: 9999 });
+});
+
+test('abandoned lock and runtime state are reclaimed by owner liveness, never blindly', (context) => {
+  const env = isolatedState(context, 'open-clowk-reclaim-');
+  const dead = () => { const error = new Error('ESRCH'); error.code = 'ESRCH'; throw error; };
+  acquireMonitorLock('gone', { env, pid: 4321 });
+  writeRuntime({ version: 1, pid: 4321, token: 'gone', port: 1 }, { env });
+
+  assert.equal(reclaimAbandonedState({ env, killFn: () => true }), false);
+  assert.equal(readMonitorLock({ env }), 'gone');
+  assert.ok(readRuntime({ env }));
+
+  assert.equal(reclaimAbandonedState({ env, killFn: dead }), true);
+  assert.equal(readMonitorLock({ env }), null);
+  assert.equal(readRuntime({ env }), null);
+});
+
+test('a torn or corrupt runtime file reads as stopped instead of throwing', (context) => {
+  const env = isolatedState(context, 'open-clowk-runtime-');
+  writeRuntime({ version: 1, pid: process.pid, token: 'live', port: 1 }, { env });
+  assert.equal(readRuntime({ env }).token, 'live');
+  fs.writeFileSync(runtimePath({ env }), '{"version": 1, "tok');
+  assert.equal(readRuntime({ env }), null);
+});
+
+test('runtime state is published atomically so a concurrent reader never sees a partial file', (context) => {
+  const env = isolatedState(context, 'open-clowk-atomic-');
+  const file = runtimePath({ env });
+  writeRuntime({ version: 1, pid: process.pid, token: 'a'.repeat(48), port: 1 }, { env });
+  const before = fs.statSync(file).ino;
+  writeRuntime({ version: 1, pid: process.pid, token: 'b'.repeat(48), port: 2 }, { env });
+  if (before) assert.notEqual(fs.statSync(file).ino, before);
+  assert.equal(readRuntime({ env }).port, 2);
+  assert.deepEqual(fs.readdirSync(path.dirname(file)).filter((name) => name.endsWith('.tmp')), []);
 });
