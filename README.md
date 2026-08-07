@@ -96,7 +96,7 @@ Use `OPEN_CLOWK_STATE_DIR` for isolated tests. If `status` shows a detection err
 
 A launch counts as successful only when the break page actually reaches the loopback server, so a launcher that reports a non-zero exit after handing the URL over never causes a second tab. If the page does not connect, Open Clowk retries at most three more times — after 5, 15, and 30 seconds — then stops relaunching for that cycle, keeps running, and reports the reason under `status` as a break page launch error. It opens no further tabs until the watched processes close and reset the cycle. If you see that error, confirm `open`, `xdg-open`, or `rundll32.exe` can launch your default browser.
 
-The break page stays reloadable from its clean loopback URL while the intervention is unresolved. Once you choose Take a break, Snooze, or Keep going — or the monitor stops — the session ends and the URL reports that no intervention is active.
+The break page stays reloadable from its clean loopback URL while the intervention is unresolved. Its session slides: every authenticated request, including the page's own low-frequency loopback heartbeat, extends it by thirty minutes, so an open page stays usable while you think about it. Thirty minutes with no activity at all expires it. Choosing Take a break, Snooze, or Keep going — or stopping the monitor — expires it immediately, and the URL then reports that no intervention is active. Nothing is stored in the browser beyond that short-lived cookie.
 
 ## Development
 

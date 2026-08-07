@@ -154,6 +154,92 @@ test('the browser session cannot read configuration or stop the monitor', async 
   assert.equal(JSON.parse(health.body).tracker.mode, 'prompted');
 });
 
+test('an authenticated request slides the session and reissues the cookie', async (context) => {
+  const clowk = await harness(context);
+  const { cookie, redirect } = await sessionFor(clowk);
+  assert.match(redirect.headers['set-cookie'][0], /Max-Age=1800/);
+
+  await clowk.advance(1700000);
+  const reload = await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } });
+  assert.equal(reload.status, 200);
+  assert.match(reload.headers['set-cookie'][0], /^open_clowk_session=/);
+  assert.match(reload.headers['set-cookie'][0], /Max-Age=1800/);
+  assert.match(reload.headers['set-cookie'][0], /HttpOnly/);
+  assert.match(reload.headers['set-cookie'][0], /SameSite=Strict/);
+
+  await clowk.advance(1700000);
+  assert.equal((await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } })).status, 200);
+});
+
+test('the open-page heartbeat keeps a live intervention reachable and exposes nothing', async (context) => {
+  const clowk = await harness(context);
+  const { cookie } = await sessionFor(clowk);
+  const beat = { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' };
+
+  for (let elapsed = 0; elapsed < 3600000; elapsed += 300000) {
+    await clowk.advance(300000);
+    const pulse = await fetchLocal(clowk.port, '/session/heartbeat', { method: 'POST', headers: beat });
+    assert.equal(pulse.status, 204);
+    assert.equal(pulse.body, '');
+    assert.match(pulse.headers['set-cookie'][0], /Max-Age=1800/);
+  }
+  assert.equal(clowk.runtime().tracker.mode, 'prompted');
+  assert.equal((await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } })).status, 200);
+});
+
+test('thirty idle minutes expire the session, and resolving expires it at once', async (context) => {
+  const clowk = await harness(context);
+  const { cookie } = await sessionFor(clowk);
+  await clowk.advance(1800001);
+  const idle = await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } });
+  assert.equal(idle.status, 403);
+  assert.match(idle.body, /no active intervention/);
+  assert.equal(idle.headers['set-cookie'], undefined);
+  assert.equal((await fetchLocal(clowk.port, '/session/heartbeat', {
+    method: 'POST', headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
+  })).status, 403);
+
+  const revived = await harness(context);
+  const fresh = await sessionFor(revived);
+  const acted = await fetchLocal(revived.port, '/action/keep-going', {
+    method: 'POST', headers: { Cookie: fresh.cookie, 'Sec-Fetch-Site': 'same-origin' },
+  });
+  assert.equal(acted.status, 200);
+  assert.equal((await fetchLocal(revived.port, '/session/heartbeat', {
+    method: 'POST', headers: { Cookie: fresh.cookie, 'Sec-Fetch-Site': 'same-origin' },
+  })).status, 403);
+});
+
+test('a heartbeat from another loopback origin is refused', async (context) => {
+  const clowk = await harness(context);
+  const { cookie } = await sessionFor(clowk);
+  const crossSite = await fetchLocal(clowk.port, '/session/heartbeat', {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-site', Origin: 'http://127.0.0.1:5173' },
+  });
+  assert.equal(crossSite.status, 403);
+});
+
+test('an action that cannot be persisted is still reported as applied', async (context) => {
+  const clowk = await harness(context);
+  const { cookie } = await sessionFor(clowk);
+  const runtimeFile = path.join(clowk.root, 'runtime.json');
+  fs.rmSync(runtimeFile);
+  fs.mkdirSync(runtimeFile);
+
+  const acted = await fetchLocal(clowk.port, '/action/keep-going', {
+    method: 'POST', headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
+  });
+  assert.equal(acted.status, 200);
+  assert.equal(JSON.parse(acted.body).result, 'reset');
+
+  const health = await fetchLocal(clowk.port, '/health', { headers: { 'X-Open-Clowk-Token': TOKEN } });
+  const reported = JSON.parse(health.body);
+  assert.equal(reported.tracker.mode, 'tracking');
+  assert.match(reported.lastError, /runtime\.json/);
+  fs.rmSync(runtimeFile, { recursive: true });
+});
+
 test('another loopback origin cannot spend the session cookie on an action', async (context) => {
   const clowk = await harness(context);
   const { cookie } = await sessionFor(clowk);

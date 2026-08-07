@@ -24,3 +24,10 @@ test('break page labels the essential robot, crowbar, clock, and privacy content
   assert.match(html, /OPEN <span>CLOWK<\/span>/);
   assert.match(html, /No commands, terminal content, keys, files, prompts, telemetry, or forced process action/);
 });
+
+test('the open page keeps its session alive with a data-free loopback heartbeat', () => {
+  assert.match(html, /fetch\('\/session\/heartbeat', \{ method: 'POST', credentials: 'same-origin' \}\)/);
+  assert.match(html, /setInterval\(async \(\) => \{/);
+  assert.match(html, /addEventListener\('pagehide', stopHeartbeat\)/);
+  assert.match(html, /stopHeartbeat\(\);\s*\n\s*message\.textContent = copy\[action\]/);
+});

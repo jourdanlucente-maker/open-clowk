@@ -57,6 +57,20 @@
   <script>
     'use strict';
     const message = document.getElementById('message');
+    let heartbeat = setInterval(async () => {
+      try {
+        const response = await fetch('/session/heartbeat', { method: 'POST', credentials: 'same-origin' });
+        if (!response.ok) stopHeartbeat();
+      } catch (error) {
+        stopHeartbeat();
+      }
+    }, 300000);
+    function stopHeartbeat() {
+      if (heartbeat === null) return;
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+    addEventListener('pagehide', stopHeartbeat);
     const copy = {
       'take-break': 'Good. Close the watched processes when ready; the timer resets only then.',
       snooze: 'Snoozed. The robot has put the crowbar down temporarily.',
@@ -73,6 +87,7 @@
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+          stopHeartbeat();
           message.textContent = copy[action];
         } catch (error) {
           message.textContent = `Could not record the choice: ${error.message}`;
