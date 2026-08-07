@@ -27,7 +27,14 @@ test('break page labels the essential robot, crowbar, clock, and privacy content
 
 test('the open page keeps its session alive with a data-free loopback heartbeat', () => {
   assert.match(html, /fetch\('\/session\/heartbeat', \{ method: 'POST', credentials: 'same-origin' \}\)/);
-  assert.match(html, /setInterval\(async \(\) => \{/);
+  assert.match(html, /setInterval\(\(\) => \{ beat\(\); \}, 300000\)/);
   assert.match(html, /addEventListener\('pagehide', stopHeartbeat\)/);
-  assert.match(html, /stopHeartbeat\(\);\s*\n\s*message\.textContent = copy\[action\]/);
+  assert.match(html, /finished = true;\s*\n\s*stopHeartbeat\(\);\s*\n\s*message\.textContent = copy\[action\]/);
+});
+
+test('the heartbeat resumes after a back-forward-cache restore but not after a choice', () => {
+  assert.match(html, /addEventListener\('pageshow', async \(event\) => \{/);
+  assert.match(html, /if \(!event\.persisted \|\| finished\) return;/);
+  assert.match(html, /if \(await beat\(\)\) startHeartbeat\(\);/);
+  assert.match(html, /function startHeartbeat\(\) \{\s*\n\s*if \(finished \|\| heartbeat !== null\) return;/);
 });

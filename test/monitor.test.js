@@ -187,14 +187,38 @@ test('the open-page heartbeat keeps a live intervention reachable and exposes no
   assert.equal((await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } })).status, 200);
 });
 
+test('an expired session never claims the live intervention is over', async (context) => {
+  const clowk = await harness(context);
+  const { cookie } = await sessionFor(clowk);
+  await clowk.advance(1800001);
+
+  const idle = await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } });
+  assert.equal(idle.status, 403);
+  assert.equal(clowk.runtime().tracker.mode, 'prompted');
+  assert.match(idle.headers['content-type'], /text\/html/);
+  assert.doesNotMatch(idle.body, /no active intervention/);
+  assert.match(idle.body, /This page&#39;s session expired, but <strong>Open Clowk<\/strong> is still waiting for your choice/);
+  assert.match(idle.body, /Close the watched app or restart Open Clowk to reset/);
+  assert.match(idle.body, /open-clowk status/);
+
+  assert.equal(idle.headers['set-cookie'], undefined);
+  assert.doesNotMatch(idle.body, /data-action=/);
+  assert.doesNotMatch(idle.body, /bootstrap/);
+  assert.doesNotMatch(idle.body, /<script/);
+  assert.equal((await fetchLocal(clowk.port, '/session/heartbeat', {
+    method: 'POST', headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
+  })).status, 403);
+  assert.equal((await fetchLocal(clowk.port, '/action/keep-going', {
+    method: 'POST', headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
+  })).status, 403);
+  assert.equal(clowk.runtime().tracker.mode, 'prompted');
+});
+
 test('thirty idle minutes expire the session, and resolving expires it at once', async (context) => {
   const clowk = await harness(context);
   const { cookie } = await sessionFor(clowk);
   await clowk.advance(1800001);
-  const idle = await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } });
-  assert.equal(idle.status, 403);
-  assert.match(idle.body, /no active intervention/);
-  assert.equal(idle.headers['set-cookie'], undefined);
+  assert.equal((await fetchLocal(clowk.port, '/', { headers: { Cookie: cookie } })).status, 403);
   assert.equal((await fetchLocal(clowk.port, '/session/heartbeat', {
     method: 'POST', headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
   })).status, 403);

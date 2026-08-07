@@ -11,6 +11,7 @@
 - Judge a break page launch by whether the page reaches the loopback server, not by launcher exit code, and bound automatic relaunching to three retries at 5, 15, and 30 seconds before reporting a truthful launch error and waiting for the next cycle.
 - Require proof that the recorded loopback port refuses connections before `stop` clears a monitor's lock and runtime state.
 - Slide the break page session on every authenticated request and keep an open page alive with a data-free loopback heartbeat, so an unresolved intervention stays reachable while thirty idle minutes still expire it.
+- Tell the truth when a page session expires while the intervention is still unresolved, restore the heartbeat after a back-forward-cache restore, and report monitor errors under a neutral label instead of calling every failure a detection error.
 
 Known scope boundary: 0.1.0 counts wall-clock time across system sleep; suspend/resume handling is deliberately out of scope.
 

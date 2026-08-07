@@ -132,7 +132,7 @@ async function status(env) {
     console.log(`Matches: ${result.health.activeMatches.join(', ') || 'none'}`);
     console.log(`Consecutive time: ${duration(result.health.tracker.consecutiveMs)}`);
     console.log(`State: ${result.health.tracker.mode}`);
-    if (result.health.lastError) console.log(`Detection error: ${result.health.lastError}`);
+    if (result.health.lastError) console.log(`Monitor error: ${result.health.lastError}`);
     if (result.health.lastBrowserError) {
       console.log(`Break page launch error: ${result.health.lastBrowserError}`);
     }

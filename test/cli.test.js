@@ -64,6 +64,13 @@ test('status and stop are truthful and idempotent while stopped', (context) => {
   assert.match(run(['stop'], env).stdout, /already stopped/);
 });
 
+test('monitor failures are reported under a neutral label, not as detection errors', () => {
+  const source = fs.readFileSync(CLI, 'utf8');
+  assert.match(source, /Monitor error: \$\{result\.health\.lastError\}/);
+  assert.doesNotMatch(source, /Detection error/);
+  assert.match(source, /Break page launch error: \$\{result\.health\.lastBrowserError\}/);
+});
+
 test('invalid public thresholds and unknown commands fail clearly', (context) => {
   const env = isolated(context);
   const invalid = run(['setup', '--minutes', '0', '--watch', 'codex'], env);

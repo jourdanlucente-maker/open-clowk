@@ -57,20 +57,32 @@
   <script>
     'use strict';
     const message = document.getElementById('message');
-    let heartbeat = setInterval(async () => {
+    let heartbeat = null;
+    let finished = false;
+    async function beat() {
+      if (finished) return false;
       try {
         const response = await fetch('/session/heartbeat', { method: 'POST', credentials: 'same-origin' });
-        if (!response.ok) stopHeartbeat();
-      } catch (error) {
-        stopHeartbeat();
-      }
-    }, 300000);
+        if (response.ok) return true;
+      } catch (error) {}
+      stopHeartbeat();
+      return false;
+    }
+    function startHeartbeat() {
+      if (finished || heartbeat !== null) return;
+      heartbeat = setInterval(() => { beat(); }, 300000);
+    }
     function stopHeartbeat() {
       if (heartbeat === null) return;
       clearInterval(heartbeat);
       heartbeat = null;
     }
+    startHeartbeat();
     addEventListener('pagehide', stopHeartbeat);
+    addEventListener('pageshow', async (event) => {
+      if (!event.persisted || finished) return;
+      if (await beat()) startHeartbeat();
+    });
     const copy = {
       'take-break': 'Good. Close the watched processes when ready; the timer resets only then.',
       snooze: 'Snoozed. The robot has put the crowbar down temporarily.',
@@ -87,6 +99,7 @@
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+          finished = true;
           stopHeartbeat();
           message.textContent = copy[action];
         } catch (error) {
