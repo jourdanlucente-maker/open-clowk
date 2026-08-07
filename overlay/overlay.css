@@ -1,0 +1,149 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100vw; height: 100vh; overflow: hidden;
+  background: transparent;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* Browser demo backdrop (?bg=1) so you can see the scene outside Electron */
+body.demo-bg {
+  background: linear-gradient(160deg, #1d2433 0%, #10141d 100%);
+}
+
+#stage { position: fixed; inset: 0; }
+
+/* ---------- Clocks ---------- */
+.clock {
+  position: absolute;
+  width: 130px; height: 130px;
+  perspective: 500px;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.4));
+  opacity: 0;
+  transform: translateY(14px) scale(.9);
+  transition: opacity .4s ease, transform .4s cubic-bezier(.2,1.6,.4,1);
+}
+.clock.arrived { opacity: 1; transform: none; }
+
+/* the interior, revealed when the face swings open */
+.case {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #3a3128, #241f18 75%);
+  border: 7px solid #8a6b3f;
+  display: flex; align-items: center; justify-content: center;
+}
+.void-label {
+  color: #8d7f68; font-size: 11px; text-align: center; line-height: 1.5;
+  opacity: 0; transition: opacity .6s .5s;
+}
+.clock.open .void-label { opacity: 1; }
+
+/* The whole clock face IS the door — it swings open on a left hinge */
+.lid {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background: #f2e9db;
+  border: 7px solid #8a6b3f;
+  transform-origin: left center;
+  transform: rotateY(0deg);
+  transition: transform 1.1s cubic-bezier(.6,-0.2,.3,1.2);
+}
+.clock.open .lid { transform: rotateY(-115deg); }
+
+.tick {
+  position: absolute; left: 50%; top: 50%;
+  width: 3px; height: 9px; background: #6b5d49;
+  transform-origin: 50% 0;
+}
+.hand {
+  position: absolute; left: 50%; top: 50%;
+  background: #17130e; border-radius: 3px;
+  transform-origin: 50% 100%;
+}
+.hand.hour   { width: 5px; height: 30px; margin-left: -2.5px; margin-top: -30px; }
+.hand.minute { width: 3px; height: 44px; margin-left: -1.5px; margin-top: -44px; background: #b3541e; }
+.pin { position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -4.5px;
+  border-radius: 50%; background: #e8632a; }
+
+.escaped {
+  position: absolute; left: 50%; top: 100%;
+  transform: translateX(-50%);
+  margin-top: 10px;
+  color: #ff8a3c; font-size: 12px; white-space: nowrap;
+  opacity: 0; transition: opacity .5s;
+}
+.clock.open .escaped { opacity: 1; }
+
+/* gears spilling out */
+.gear {
+  position: absolute; left: 50%; top: 50%;
+  font-size: 20px; line-height: 1;
+  animation: spill 1.6s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes spill {
+  0%   { transform: translate(-50%, -50%) rotate(0turn); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(2turn); opacity: 0; }
+}
+
+/* ---------- Sprite mode (poster-grade Higgsfield art) ---------- */
+.spr { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+body.sprites .clock { width: 165px; height: 165px; }
+body.sprites .case { background: none; border: none; border-radius: 0; }
+body.sprites .lid { background: none; border: none; border-radius: 0; }
+body.sprites .hand.hour   { height: 26px; margin-top: -26px; }
+body.sprites .hand.minute { height: 38px; margin-top: -38px; }
+body.sprites #sprite { display: none; }
+#robot-img { display: none; width: 130px; user-select: none; -webkit-user-drag: none; }
+body.sprites #robot-img { display: block; }
+
+/* ---------- Robot ---------- */
+#robot {
+  position: fixed;
+  bottom: 24px; left: 100vw;
+  width: 96px; height: 120px;
+  transition: left 1.6s cubic-bezier(.45,.05,.55,.95), bottom 1.6s cubic-bezier(.45,.05,.55,.95);
+  z-index: 10;
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,.45));
+}
+#sprite { width: 6px; height: 6px; position: absolute; top: 0; left: 0; }
+
+#robot.walking #sprite { animation: legs .35s steps(1) infinite; }
+@keyframes legs { 50% { transform: translateY(-3px); } }
+
+#robot.prying { animation: pry .22s ease-in-out 5; }
+@keyframes pry {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(-12deg) translateY(-4px); }
+}
+
+/* ---------- Speech bubble ---------- */
+#bubble {
+  position: fixed;
+  right: 40px; bottom: 170px;
+  max-width: 430px;
+  background: #f2e9db;
+  border: 3px solid #17130e;
+  border-radius: 18px 18px 4px 18px;
+  padding: 22px 26px;
+  color: #17130e;
+  box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  animation: pop .35s cubic-bezier(.2,1.6,.4,1);
+  z-index: 11;
+}
+@keyframes pop { from { transform: scale(.6); opacity: 0; } }
+
+.bubble-title { font-weight: 700; letter-spacing: 4px; color: #b3541e; margin-bottom: 10px; }
+#bubble p { font-size: 14.5px; line-height: 1.5; margin-bottom: 10px; }
+.tictac { font-weight: 700; color: #e8632a; }
+
+.bubble-buttons { display: flex; gap: 10px; margin: 14px 0 10px; }
+.bubble-buttons button {
+  font: 700 13.5px 'SF Mono', Menlo, monospace;
+  padding: 10px 14px; border-radius: 10px; cursor: pointer;
+  border: 2.5px solid #17130e;
+}
+#btn-break  { background: #e8632a; color: #fff3e0; }
+#btn-snooze { background: #f2e9db; color: #17130e; }
+.bubble-footer { font-size: 11px; color: #8d7f68; }

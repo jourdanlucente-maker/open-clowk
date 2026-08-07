@@ -1,0 +1,34 @@
+{
+  "name": "open-clowk",
+  "version": "2.0.0",
+  "description": "An agent that opens every clock on your screen so you remember to stop. Desktop mascot + CLI. Tic tac, MF.",
+  "main": "electron/main.js",
+  "bin": {
+    "open-clowk": "bin/open-clowk.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "demo": "electron . --demo",
+    "cli": "node bin/open-clowk.js",
+    "cli:all": "node bin/open-clowk.js --all",
+    "test": "node test/activity.test.js"
+  },
+  "keywords": [
+    "break-reminder",
+    "wellness",
+    "mascot",
+    "clock",
+    "clowk",
+    "lose-track-of-time",
+    "jean-michel-tokens",
+    "tic-tac-mf"
+  ],
+  "author": "jourdanlucente-maker",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
