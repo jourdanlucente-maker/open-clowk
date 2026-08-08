@@ -125,6 +125,27 @@ function platformExeNames(platform) {
   return [...names];
 }
 
+/* How an executable name must be compared against the processes that are
+ * actually running.
+ *
+ * Application targets need case folding: the table stores normalized names
+ * while the binaries that really run are `Cursor`, `Code`, `WindowsTerminal`.
+ *
+ * Agent targets are the opposite. `claude` and `codex` ARE the real CLI binary
+ * names, and the check is an identity gate, not an availability hint — a
+ * differently-cased process is a different program. Anthropic's `Claude`
+ * desktop application must never satisfy a selected Claude Code target, or the
+ * mascot appears for someone who has no agent session at all. */
+const AGENT_EXE_NAMES = new Set(
+  TARGETS.filter((t) => t.kind === 'agent').flatMap((t) =>
+    (t.exeNames || []).map((exe) => normalizeName(exe))
+  )
+);
+
+function exeMatchIsCaseSensitive(name) {
+  return AGENT_EXE_NAMES.has(normalizeName(name));
+}
+
 /* Hosts an agent target may be spotted inside. Codex/Claude have no window of
  * their own, so they are matched through a host app. The user's host choices
  * win: selecting Claude Code + VS Code means VS Code only, never every
@@ -232,6 +253,7 @@ module.exports = {
   detectTargets,
   normalizeName,
   platformExeNames,
+  exeMatchIsCaseSensitive,
   MIN_MINUTES,
   MAX_MINUTES,
 };

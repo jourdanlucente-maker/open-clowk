@@ -76,7 +76,10 @@ Every change after the import commit is a separate, reviewable commit:
   POSIX executable check matches the whole name case-insensitively
   (`pgrep -xi`), so a real `Cursor`/`Code` binary is found from the normalized
   target name, and the setup checklist's probes run concurrently instead of
-  one adapter timeout after another.
+  one adapter timeout after another. Case folding was then scoped to
+  application availability only: the `codex`/`claude` gate matches exactly, so
+  the `Claude` desktop application cannot satisfy a selected Claude Code
+  target.
 
 ### Superseded idle-time line (archived, not part of this branch)
 

@@ -5,10 +5,14 @@
  * Nothing here reads arguments, command lines, prompts, terminal contents,
  * window titles, files' contents, screen pixels, audio, or network data.
  *
- * `execRunning(name)` contract: `name` arrives normalized (lower-cased, no
- * extension), and every platform must match the WHOLE executable name against
- * it case-insensitively — real binaries are `Cursor`, `Code`,
- * `WindowsTerminal`. Matching is never widened to the command line.
+ * `execRunning(name, { caseSensitive })` contract: `name` arrives normalized
+ * (lower-cased, no extension) and every platform matches the WHOLE executable
+ * name against it, never widening to the command line. Case folding is opt-in
+ * and defaults to off, so a probe only ever matches more than the exact name
+ * when its caller says so: application availability needs folding (the real
+ * binaries are `Cursor`, `Code`, `WindowsTerminal`), while the Codex/Claude
+ * identity gate must stay exact. `exeMatchIsCaseSensitive` in targets.js is
+ * the single owner of that decision.
  *
  * execFile/readFile are injectable so tests run entirely on fixtures.
  */
@@ -65,8 +69,8 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
           'tell application "System Events" to get name of first application process whose frontmost is true',
         ]);
       },
-      async execRunning(name) {
-        return (await run(exec, 'pgrep', ['-xi', name])) !== null;
+      async execRunning(name, { caseSensitive = true } = {}) {
+        return (await run(exec, 'pgrep', [caseSensitive ? '-x' : '-xi', name])) !== null;
       },
       appInstalled(bundlePath) {
         try {
@@ -95,9 +99,14 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
         ].join(' ');
         return run(exec, 'powershell', ['-NoProfile', '-NonInteractive', '-Command', script]);
       },
-      async execRunning(name) {
-        const out = await run(exec, 'tasklist', ['/NH', '/FI', `IMAGENAME eq ${name}.exe`]);
-        return !!out && out.toLowerCase().includes(`${name}.exe`.toLowerCase());
+      // The IMAGENAME filter is case-insensitive and cannot be made otherwise,
+      // so an exact request is honoured by comparing the image name tasklist
+      // reports back — `Claude.exe` is not `claude.exe`.
+      async execRunning(name, { caseSensitive = true } = {}) {
+        const image = `${name}.exe`;
+        const out = await run(exec, 'tasklist', ['/NH', '/FI', `IMAGENAME eq ${image}`]);
+        if (!out) return false;
+        return caseSensitive ? out.includes(image) : out.toLowerCase().includes(image.toLowerCase());
       },
       appInstalled() {
         return false; // per-app install probing is not implemented on Windows in this cut
@@ -128,8 +137,8 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
           return null;
         }
       },
-      async execRunning(name) {
-        return (await run(exec, 'pgrep', ['-xi', name])) !== null;
+      async execRunning(name, { caseSensitive = true } = {}) {
+        return (await run(exec, 'pgrep', [caseSensitive ? '-x' : '-xi', name])) !== null;
       },
       appInstalled() {
         return false;

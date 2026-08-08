@@ -31,6 +31,7 @@ const {
   getTarget,
   normalizeName,
   platformExeNames,
+  exeMatchIsCaseSensitive,
   MIN_MINUTES,
   MAX_MINUTES,
 } = require('./targets');
@@ -103,7 +104,7 @@ async function detect() {
   const a = getAdapter();
   if (!a.supported) return { supported: false, message: a.message };
   const names = platformExeNames(a.platform);
-  const answers = await Promise.all(names.map((name) => a.execRunning(name)));
+  const answers = await Promise.all(names.map((name) => probeExecRunning(a, name)));
   const running = Object.fromEntries(names.map((name, i) => [name, answers[i]]));
   const targets = detectTargets({
     platform: a.platform,
@@ -389,6 +390,13 @@ function checkFrontmostNow() {
 
 const cachedExecRunning = {};
 
+/* Every executable probe in the app goes through here, so the availability
+ * checklist and the runtime agent gate can never disagree about how strictly a
+ * name is matched. */
+function probeExecRunning(a, name) {
+  return a.execRunning(name, { caseSensitive: exeMatchIsCaseSensitive(name) });
+}
+
 function selectedAgentExeNames() {
   const names = new Set();
   for (const id of prefs.targets) {
@@ -402,9 +410,10 @@ function selectedAgentExeNames() {
 async function refreshExecRunning(names) {
   try {
     const a = getAdapter();
-    for (const name of names) {
-      cachedExecRunning[name] = await a.execRunning(name);
-    }
+    const answers = await Promise.all(names.map((name) => probeExecRunning(a, name)));
+    names.forEach((name, i) => {
+      cachedExecRunning[name] = answers[i];
+    });
   } catch (e) {
     // name-only probes are best effort; a failure just means "not running"
   }

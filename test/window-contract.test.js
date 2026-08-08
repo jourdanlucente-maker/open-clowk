@@ -27,7 +27,9 @@ const electronState = installFakeElectron();
 // `front.current = null` reproduces a denied/revoked macOS Automation consent:
 // the probe answers nothing, forever, and never throws.
 const front = { current: 'Terminal' };
-const execs = { codex: false, claude: false };
+// The processes really running, by their real NAME — so the fixture can honour
+// the adapter's case contract instead of assuming the product asked correctly.
+const runningProcesses = new Set();
 const probeCalls = { frontmost: 0, execRunning: 0 };
 const adapters = require('../electron/adapters');
 adapters.createAdapter = () => ({
@@ -39,9 +41,11 @@ adapters.createAdapter = () => ({
     probeCalls.frontmost++;
     return front.current;
   },
-  execRunning: async (name) => {
+  execRunning: async (name, { caseSensitive = true } = {}) => {
     probeCalls.execRunning++;
-    return execs[name] === true;
+    return [...runningProcesses].some((proc) =>
+      caseSensitive ? proc === name : proc.toLowerCase() === name.toLowerCase()
+    );
   },
   appInstalled: (bundle) => bundle.includes('Terminal.app'),
 });
@@ -323,6 +327,50 @@ function cleanup() {
   await electronState.ipcInvokeHandlers['setup:quit'](null);
   assert.strictEqual(electronState.quitCalls, 2, 'Quit quits Open Clowk');
   assert.strictEqual(reminder.state, 'stopped', 'Quit stops the reminder');
+
+  // --- the agent gate is an identity check, not an availability hint -----------
+  // Anthropic's `Claude` desktop app runs a binary whose name differs from the
+  // Claude Code CLI only in case. Selecting Claude Code alone means any
+  // supported host counts, so the executable check is the whole gate: if it
+  // folded case, this user would be interrupted with no agent session at all.
+  {
+    front.current = 'Terminal';
+    runningProcesses.clear();
+    runningProcesses.add('Claude');
+    const relaunched = await launchIpc(null, { minutes: 30, targets: ['claude-code'] });
+    assert.strictEqual(relaunched.ok, true, 'Claude Code on its own is a valid selection');
+
+    assert.strictEqual(
+      await main._test.checkFrontmostNow(),
+      false,
+      'the Claude desktop app never satisfies a selected Claude Code target'
+    );
+
+    const desktopState = await electronState.ipcInvokeHandlers['setup:state'](null);
+    const desktopById = Object.fromEntries(desktopState.targets.map((t) => [t.id, t.status]));
+    assert.strictEqual(
+      desktopById['claude-code'],
+      'not-running',
+      'and the checklist reports it as not running rather than available'
+    );
+
+    runningProcesses.add('claude');
+    assert.strictEqual(
+      await main._test.checkFrontmostNow(),
+      true,
+      'the real lower-case claude CLI in a supported host does satisfy it'
+    );
+
+    // Host availability keeps folding case: a real `Cursor` binary counts even
+    // though the target table stores the name normalized.
+    runningProcesses.clear();
+    runningProcesses.add('Cursor');
+    const foldedState = await electronState.ipcInvokeHandlers['setup:state'](null);
+    const foldedById = Object.fromEntries(foldedState.targets.map((t) => [t.id, t.status]));
+    assert.strictEqual(foldedById['cursor'], 'available', 'a running "Cursor" is still detected');
+
+    if (main._test.getReminder()) main._test.getReminder().stop();
+  }
 
   // --- no forbidden module loads through the whole cycle ------------------------
   assert.deepStrictEqual(

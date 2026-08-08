@@ -87,6 +87,9 @@ fourth action.
 If you pick a Codex/Claude target *together with* host apps, only those hosts
 count: **Claude Code + VS Code** never triggers in Terminal.app. Pick an agent
 on its own and any supported host counts, otherwise it could never trigger.
+The agent check is an exact match on the CLI's own name, so having Anthropic's
+`Claude` desktop app open is not the same as having a Claude Code session
+running — only the latter satisfies the target.
 
 Preferences persist locally (`~/.open-clowk/prefs.json`). The app starts only
 when you launch it — no login persistence, no global install.

@@ -14,6 +14,7 @@ const {
   validatePrefs,
   detectTargets,
   platformExeNames,
+  exeMatchIsCaseSensitive,
 } = require('../electron/targets');
 
 const NOT_RUNNING = () => false;
@@ -218,6 +219,31 @@ const NOT_RUNNING = () => false;
     ['claude', 'code', 'codex', 'cursor', 'devenv', 'wezterm-gui'],
     'macOS probes exactly the supported executable names'
   );
+
+  // Only the agent CLIs are matched exactly; app binaries need case folding
+  // because the table stores them normalized. The predicate is a pure function
+  // of the name, which is sound only while the two name sets stay disjoint.
+  for (const agent of ['claude', 'codex', 'Claude.exe', 'CODEX']) {
+    assert.ok(exeMatchIsCaseSensitive(agent), `${agent} is an agent identity and must match exactly`);
+  }
+  for (const app of ['cursor', 'code', 'konsole', 'wezterm-gui', 'windowsterminal', 'devenv']) {
+    assert.ok(!exeMatchIsCaseSensitive(app), `${app} is an app binary and must fold case`);
+  }
+  {
+    const agentNames = new Set(
+      TARGETS.filter((t) => t.kind === 'agent').flatMap((t) =>
+        (t.exeNames || []).map((e) => e.toLowerCase().replace(/\.exe$/, ''))
+      )
+    );
+    const appNames = TARGETS.filter((t) => t.kind === 'app').flatMap((t) =>
+      (t.exeNames || []).map((e) => e.toLowerCase().replace(/\.exe$/, ''))
+    );
+    assert.deepStrictEqual(
+      appNames.filter((n) => agentNames.has(n)),
+      [],
+      'no app target shares an executable name with an agent, so per-name case policy is unambiguous'
+    );
+  }
 
   // The privacy boundary: detection may ask about these names and nothing else.
   for (const platform of ['darwin', 'win32', 'linux']) {

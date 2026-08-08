@@ -28,7 +28,7 @@ function fixtureExec(map) {
 {
   const exec = fixtureExec({
     osascript: 'Terminal\n',
-    'pgrep -xi codex': '12345\n',
+    'pgrep -x codex': '12345\n',
   });
   const adapter = createAdapter({ platform: 'darwin', exec });
   assert.strictEqual(adapter.supported, true);
@@ -39,10 +39,11 @@ function fixtureExec(map) {
     assert.ok(!/title|position|bounds|miniaturized/i.test(exec.calls[0]), 'never reads window properties');
     assert.strictEqual(await adapter.execRunning('codex'), true, 'running executable detected by name');
     assert.strictEqual(await adapter.execRunning('claude'), false, 'absent executable reported');
+    assert.strictEqual(await adapter.execRunning('cursor', { caseSensitive: false }), false);
     assert.deepStrictEqual(
       exec.calls.filter((c) => c.startsWith('pgrep')),
-      ['pgrep -xi codex', 'pgrep -xi claude'],
-      'pgrep is asked for one whole executable name, case-insensitively, and nothing else'
+      ['pgrep -x codex', 'pgrep -x claude', 'pgrep -xi cursor'],
+      'pgrep is asked for one whole executable name — exact by default, folded only on request'
     );
 
     // --- Windows: process NAME via GetForegroundWindow PID; tasklist image name ---
@@ -54,6 +55,8 @@ function fixtureExec(map) {
       // tasklist's IMAGENAME filter is case-insensitive: the normalized
       // (lower-cased) probe name still has to recognise the real image name.
       'tasklist /NH /FI IMAGENAME eq cursor.exe': 'Cursor.exe   777 Console   1   80,000 K\r\n',
+      // Anthropic's desktop app, which is NOT the Claude Code CLI.
+      'tasklist /NH /FI IMAGENAME eq claude.exe': 'Claude.exe   555 Console   1   70,000 K\r\n',
     });
     const win = createAdapter({ platform: 'win32', exec: winExec });
     assert.strictEqual(win.supported, true);
@@ -68,18 +71,27 @@ function fixtureExec(map) {
     assert.ok(psCall.includes('ProcessName'), 'Windows reads the process name');
     assert.ok(!/MainWindowTitle|GetWindowText/i.test(psCall), 'Windows never reads the window title');
     assert.strictEqual(await win.execRunning('codex'), true);
-    assert.strictEqual(await win.execRunning('claude'), false);
     assert.strictEqual(
-      await win.execRunning('cursor'),
+      await win.execRunning('cursor', { caseSensitive: false }),
       true,
       'a capitalized real image name is recognised from the normalized probe name'
+    );
+    assert.strictEqual(
+      await win.execRunning('claude'),
+      false,
+      'the Claude desktop image never satisfies an exact claude request'
+    );
+    assert.strictEqual(
+      await win.execRunning('claude', { caseSensitive: false }),
+      true,
+      'and the same image does satisfy a folded request, so the filter itself still works'
     );
 
     // --- Linux X11: active window -> PID -> /proc/<pid>/comm (name only) ------
     const x11Exec = fixtureExec({
       'xprop -root _NET_ACTIVE_WINDOW': '_NET_ACTIVE_WINDOW(WINDOW): window id # 0x3a00007\n',
       'xprop -id 0x3a00007 WM_PID': 'WM_PID(CARDINAL) = 4242\n',
-      'pgrep -xi konsole': '4242\n',
+      'pgrep -x konsole': '4242\n',
     });
     const x11 = createAdapter({
       platform: 'linux',
@@ -92,57 +104,80 @@ function fixtureExec(map) {
     assert.strictEqual(await x11.frontmost(), 'konsole', 'X11 frontmost resolves to the executable name');
     assert.strictEqual(await x11.execRunning('konsole'), true);
 
-    // --- POSIX: the normalized probe name finds the REAL, capitalized binary ---
-    // Target names are normalized to lower case before they reach an adapter,
-    // while the binaries actually running are `Cursor`, `Code`,
-    // `WindowsTerminal`. This fixture implements pgrep's own flag semantics, so
-    // dropping either flag fails it: without `-i` a capitalized process is
-    // missed, without `-x` a partial name matches something it should not.
-    {
-      const RUNNING = ['Cursor', 'Code', 'WindowsTerminal', 'konsole'];
-      const pgrepExec = (file, args, _opts, cb) => {
-        if (file !== 'pgrep') return cb(new Error('fixture: only pgrep'), '');
-        const [flags, name] = args;
-        const exact = flags.includes('x');
-        const fold = (s) => (flags.includes('i') ? s.toLowerCase() : s);
-        const hit = RUNNING.some((proc) =>
-          exact ? fold(proc) === fold(name) : fold(proc).includes(fold(name))
-        );
-        cb(hit ? null : new Error('no match'), hit ? '4242\n' : '');
-      };
+    // --- POSIX: folded for app availability, exact for the agent gate ---------
+    // This fixture implements pgrep's own flag semantics against a table of the
+    // processes really running, so dropping either flag fails it: without `-i`
+    // a capitalized app binary is missed, without `-x` a partial name matches
+    // something it should not, and with `-i` on the agent gate the `Claude`
+    // desktop application would impersonate the Claude Code CLI.
+    const pgrepFixture = (running) => (file, args, _opts, cb) => {
+      if (file !== 'pgrep') return cb(new Error('fixture: only pgrep'), '');
+      const [flags, name] = args;
+      const exact = flags.includes('x');
+      const fold = (s) => (flags.includes('i') ? s.toLowerCase() : s);
+      const hit = running.some((proc) =>
+        exact ? fold(proc) === fold(name) : fold(proc).includes(fold(name))
+      );
+      cb(hit ? null : new Error('no match'), hit ? '4242\n' : '');
+    };
+    const posixAdapter = (platform, running) =>
+      createAdapter({ platform, env: { XDG_SESSION_TYPE: 'x11' }, exec: pgrepFixture(running) });
 
-      for (const platform of ['darwin', 'linux']) {
-        const posix = createAdapter({
-          platform,
-          env: { XDG_SESSION_TYPE: 'x11' },
-          exec: pgrepExec,
-        });
-        assert.strictEqual(
-          await posix.execRunning('cursor'),
-          true,
-          `${platform}: a running "Cursor" is found by the normalized name`
-        );
-        assert.strictEqual(
-          await posix.execRunning('code'),
-          true,
-          `${platform}: a running "Code" is found by the normalized name`
-        );
-        assert.strictEqual(
-          await posix.execRunning('konsole'),
-          true,
-          `${platform}: an already-lower-case binary still matches`
-        );
-        assert.strictEqual(
-          await posix.execRunning('codex'),
-          false,
-          `${platform}: an executable that is not running is never invented`
-        );
-        assert.strictEqual(
-          await posix.execRunning('terminal'),
-          false,
-          `${platform}: a partial name never matches — the check stays whole-name`
-        );
-      }
+    for (const platform of ['darwin', 'linux']) {
+      // Anthropic's `Claude` desktop app is open; no agent CLI is running.
+      const desktopOnly = posixAdapter(platform, ['Cursor', 'Code', 'WindowsTerminal', 'konsole', 'Claude']);
+      const folded = { caseSensitive: false };
+
+      assert.strictEqual(
+        await desktopOnly.execRunning('cursor', folded),
+        true,
+        `${platform}: a running "Cursor" is found by the normalized name`
+      );
+      assert.strictEqual(
+        await desktopOnly.execRunning('code', folded),
+        true,
+        `${platform}: a running "Code" is found by the normalized name`
+      );
+      assert.strictEqual(
+        await desktopOnly.execRunning('konsole', folded),
+        true,
+        `${platform}: an already-lower-case binary still matches`
+      );
+      assert.strictEqual(
+        await desktopOnly.execRunning('codex', folded),
+        false,
+        `${platform}: an executable that is not running is never invented`
+      );
+      assert.strictEqual(
+        await desktopOnly.execRunning('terminal', folded),
+        false,
+        `${platform}: a partial name never matches — the check stays whole-name`
+      );
+
+      // The negative the agent gate exists for.
+      assert.strictEqual(
+        await desktopOnly.execRunning('claude'),
+        false,
+        `${platform}: the "Claude" desktop app does not count as the claude CLI`
+      );
+      assert.strictEqual(
+        await desktopOnly.execRunning('codex'),
+        false,
+        `${platform}: no codex CLI running stays false`
+      );
+
+      // ...and the positive it must still allow.
+      const cliRunning = posixAdapter(platform, ['Claude', 'claude', 'codex']);
+      assert.strictEqual(
+        await cliRunning.execRunning('claude'),
+        true,
+        `${platform}: the real lower-case claude CLI satisfies the gate`
+      );
+      assert.strictEqual(
+        await cliRunning.execRunning('codex'),
+        true,
+        `${platform}: the real lower-case codex CLI satisfies the gate`
+      );
     }
 
     // --- Linux Wayland: clear compatibility message, never a fallback ---------
