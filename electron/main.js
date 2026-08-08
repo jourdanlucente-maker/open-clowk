@@ -43,8 +43,12 @@ const PREFS_FILE = path.join(PREFS_DIR, 'prefs.json');
 const FRONTMOST_FAILURES_BEFORE_COMPAT = 3;
 
 // The control card sits in the primary display's bottom-right corner.
-const CARD_WIDTH = 430;
-const CARD_HEIGHT = 200;
+// The card's body clips at the window size, so these must cover the tallest
+// state — break: title + message wrapped to two lines (a 4-digit interval
+// wraps it) + countdown + Resume now — or the clipped control is the break's
+// only way out. Pinned by test/window-contract.test.js.
+const CARD_WIDTH = 460;
+const CARD_HEIGHT = 280;
 const CARD_MARGIN = 40;
 
 let adapter = null; // created lazily so tests can inject fixtures
@@ -172,8 +176,9 @@ function showOverlay() {
   overlayWindow.showInactive();
   overlayWindow.on('closed', () => {
     overlayWindow = null;
-    // External close (Cmd+W / Alt+F4): never leave tracking paused —
-    // the interval re-arms exactly like a dismissal.
+    // Both layers are non-focusable and skip the taskbar, so this is reached
+    // through dismissIntervention or a window-manager kill — never leave
+    // tracking paused: the interval re-arms exactly like a dismissal.
     dismissIntervention('closed');
   });
 

@@ -2,6 +2,12 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Author `display` declarations beat the UA stylesheet's `[hidden]` rule, so a
+ * single `display: flex` elsewhere in this file is enough to make a hidden
+ * element render. The card toggles `hidden` to switch between its action rows,
+ * so that failure mode puts an extra live button on screen. */
+[hidden] { display: none !important; }
+
 html, body {
   width: 100vw; height: 100vh; overflow: hidden;
   background: transparent;
@@ -25,7 +31,9 @@ html, body {
 
 #card-line { font-size: 14.5px; line-height: 1.5; }
 
-.card-buttons { display: flex; gap: 10px; margin-top: auto; }
+/* Wrapping keeps every action reachable instead of letting the last one slide
+ * under the window edge, since the body clips at a fixed window size. */
+.card-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
 
 .card-buttons button {
   font: 700 13.5px 'SF Mono', Menlo, monospace;

@@ -1,5 +1,8 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Author `display` declarations beat the UA stylesheet's `[hidden]` rule. */
+[hidden] { display: none !important; }
+
 html, body {
   width: 100vw; height: 100vh; overflow: hidden;
   background: transparent;
@@ -113,10 +116,15 @@ body.sprites #robot-img { display: block; }
   50%      { transform: rotate(-12deg) translateY(-4px); }
 }
 
-/* ---------- Speech bubble ---------- */
+/* ---------- Speech bubble ----------
+ * `bottom` must clear the control card window, which owns the bottom-right
+ * corner of the same display (CARD_HEIGHT + CARD_MARGIN in electron/main.js).
+ * The card is created second and draws on top, so a smaller offset hides the
+ * payoff line exactly when the animation lands. Pinned by
+ * test/window-contract.test.js. */
 #bubble {
   position: fixed;
-  right: 40px; bottom: 170px;
+  right: 40px; bottom: 340px;
   max-width: 430px;
   background: #f2e9db;
   border: 3px solid #17130e;

@@ -201,7 +201,7 @@ async function scene() {
     await wait(400);
   }
 
-  robot.style.left = `${innerWidth - 560}px`;
+  robot.style.left = `${innerWidth - 660}px`;
   robot.style.bottom = '80px';
   await wait(1300);
   robot.classList.remove('walking');

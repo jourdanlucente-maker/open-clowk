@@ -28,6 +28,8 @@ const OVERLAY_JS = read('overlay', 'overlay.js');
 const OVERLAY_HTML = read('overlay', 'overlay.html');
 const CONTROL_JS = read('overlay', 'control.js');
 const CONTROL_HTML = read('overlay', 'control.html');
+const CONTROL_CSS = read('overlay', 'control.css');
+const OVERLAY_CSS = read('overlay', 'overlay.css');
 
 /* ---------- minimal faithful DOM ---------- */
 
@@ -295,6 +297,22 @@ async function untilActions(actions, n) {
   assert.ok(!OVERLAY_HTML.includes('btn-break'), 'the mascot layer carries no buttons');
   assert.ok(!OVERLAY_JS.includes('window.clowk'), 'the mascot layer has no bridge to the main process');
 
+  // --- the `hidden` attribute must actually hide ---------------------------------
+  // This DOM double has no stylesheet, so `el.hidden = true` always "works"
+  // here. In a real renderer an author `display:` declaration beats the UA
+  // stylesheet's `[hidden]` rule — which silently left Resume now on screen
+  // from the first frame, and left Take a break clickable during a break.
+  for (const [name, css] of [['control.css', CONTROL_CSS], ['overlay.css', OVERLAY_CSS]]) {
+    assert.ok(
+      /\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/.test(css),
+      `${name} neutralises [hidden], so toggling it cannot be overridden by a display rule`
+    );
+  }
+  assert.ok(
+    /\.card-buttons\s*\{[^}]*display:\s*flex/.test(CONTROL_CSS),
+    'the guard above is load-bearing: .card-buttons still sets display'
+  );
+
   // --- offline CSS-art scene (the mascot layer, decoration only) ---------------
   {
     const { document, actions } = runOverlay({ online: false });
@@ -353,6 +371,22 @@ async function untilActions(actions, n) {
     assert.deepStrictEqual(actions, ['break'], 'Resume now resolves the break — no fourth intent');
     await new Promise((r) => setTimeout(r, 30));
     assert.deepStrictEqual(actions, ['break'], 'the cancelled countdown never fires again');
+  }
+
+  // --- a second Take a break never orphans a countdown --------------------------
+  {
+    const { document, actions } = runControl();
+    document.byId['btn-break'].click();
+    document.byId['btn-break'].click();
+    document.byId['btn-break'].click();
+    await untilActions(actions, 1);
+    assert.deepStrictEqual(actions, ['break'], 'the break resolves exactly once');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(
+      actions,
+      ['break'],
+      'no second timer survives to dismiss a later intervention early'
+    );
   }
 
   // --- Ignore and Shut down send their exact intents ---------------------------

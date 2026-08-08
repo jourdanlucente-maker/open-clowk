@@ -38,6 +38,7 @@ function endBreak() {
 }
 
 function startBreak() {
+  if (breakTick) return;
   document.getElementById('actions').hidden = true;
   document.getElementById('break-actions').hidden = false;
   const el = document.getElementById('countdown');

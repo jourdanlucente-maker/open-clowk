@@ -173,6 +173,24 @@ function cleanup() {
     'the control card sits inside the primary display'
   );
 
+  // The card's body clips at the window size, so the window has to cover its
+  // tallest state or the clipped control is the break's only way out.
+  assert.ok(
+    card.opts.height >= 260,
+    'the card is tall enough for title + wrapped message + countdown + Resume now'
+  );
+  assert.ok(card.opts.width >= 440, 'the card is wide enough for the three action buttons');
+
+  // The mascot bubble and the card own the same corner of the same display, and
+  // the card is created second, so it draws on top of anything it overlaps.
+  const overlayCss = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'overlay.css'), 'utf8');
+  const bubbleBottom = Number((overlayCss.match(/#bubble\s*\{[^}]*bottom:\s*(\d+)px/) || [])[1]);
+  assert.ok(Number.isInteger(bubbleBottom), 'the mascot bubble has a pinned bottom offset');
+  assert.ok(
+    bubbleBottom >= mascot.opts.height - card.opts.y,
+    'the mascot bubble clears the control card instead of being covered by it'
+  );
+
   const action = (reason) => electronState.ipcHandlers['clowk-action'](null, reason);
 
   // --- Ignore: dismiss, interval restarts --------------------------------------
@@ -180,10 +198,12 @@ function cleanup() {
   assert.ok(mascot.closed && card.closed, 'ignore closes both layers together');
   assert.strictEqual(reminder.state, 'armed', 'ignore restarts the interval');
 
-  // --- external close (Cmd+W) of either layer: tracking must recover ------------
+  // --- either layer closed from outside: tracking must recover ------------------
+  // Both layers are non-focusable and skip the taskbar, so this is a
+  // window-manager kill rather than Cmd+W — it must still re-arm.
   reminder.elapseNow();
   const [mascot2, card2] = layers();
-  card2.close(); // no action — the OS-level close path, on the card this time
+  card2.close(); // no action — the window-manager path, on the card this time
   assert.ok(mascot2.closed, 'closing one layer takes the other with it');
   assert.strictEqual(reminder.state, 'armed', 'external close re-arms (inherited bug fixed)');
 
