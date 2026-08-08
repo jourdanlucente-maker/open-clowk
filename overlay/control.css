@@ -1,0 +1,57 @@
+/* OPEN CLOWK control card — the compact, hit-tested half of an intervention. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* Author `display` declarations beat the UA stylesheet's `[hidden]` rule, so a
+ * single `display: flex` elsewhere in this file is enough to make a hidden
+ * element render. The card toggles `hidden` to switch between its action rows,
+ * so that failure mode puts an extra live button on screen. */
+[hidden] { display: none !important; }
+
+html, body {
+  width: 100vw; height: 100vh; overflow: hidden;
+  background: transparent;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+#card {
+  position: fixed; inset: 0;
+  background: #f2e9db;
+  border: 3px solid #17130e;
+  border-radius: 18px;
+  padding: 18px 20px;
+  color: #17130e;
+  box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-title { font-weight: 700; letter-spacing: 4px; color: #b3541e; }
+
+#card-line { font-size: 14.5px; line-height: 1.5; }
+
+/* Wrapping keeps every action reachable instead of letting the last one slide
+ * under the window edge, since the body clips at a fixed window size. */
+.card-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
+
+.card-buttons button {
+  font: 700 13.5px 'SF Mono', Menlo, monospace;
+  padding: 10px 14px; border-radius: 10px; cursor: pointer;
+  border: 2.5px solid #17130e;
+}
+
+#btn-break  { background: #e8632a; color: #fff3e0; }
+#btn-ignore { background: #f2e9db; color: #17130e; }
+#btn-shutdown { background: #17130e; color: #f2e9db; }
+#btn-resume { background: #e8632a; color: #fff3e0; flex: 1; }
+
+#countdown {
+  padding: 12px 14px;
+  border: 2.5px dashed #b3541e;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  color: #b3541e;
+  text-align: center;
+}
