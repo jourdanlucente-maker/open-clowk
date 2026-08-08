@@ -105,6 +105,16 @@ can **Relaunch** with new settings or **Quit Open Clowk**.
   decision.
 - **No tray icon.** The setup window is the only surface: reopen it by
   starting Open Clowk again or via its dock/taskbar icon.
+- **A lost frontmost capability is reported at the first due interval, not
+  seconds after Launch.** Open Clowk reads the frontmost application only when
+  an interval comes due (and then on the pending cadence until a selected
+  target is in front), so it does not burn battery probing a machine nobody is
+  waiting on. The trade is that if macOS Automation consent is denied or
+  revoked, the setup window says so at the first due interval — 30 minutes by
+  default, up to 24 hours at the longest interval — and until then the app
+  looks armed while no intervention can appear. The reporting itself is
+  unchanged and covered by `test/window-contract.test.js`; the schedule is a
+  deliberate owner decision.
 - **No keyboard shortcut dismisses an intervention.** Neither layer takes
   keyboard focus, by design, so the pointer is the way — which is why the
   card's buttons are always visible rather than hidden behind the animation

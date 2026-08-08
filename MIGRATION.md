@@ -72,7 +72,11 @@ Every change after the import commit is a separate, reviewable commit:
   an interval is due and then on its bounded pending cadence; the
   display-sized mascot layer lost its preload/IPC bridge; workflow
   least-privilege permissions and de-duplicated triggers; documentation
-  matched to the exact probe scope.
+  matched to the exact probe scope. Follow-up in the same review round: the
+  POSIX executable check matches the whole name case-insensitively
+  (`pgrep -xi`), so a real `Cursor`/`Code` binary is found from the normalized
+  target name, and the setup checklist's probes run concurrently instead of
+  one adapter timeout after another.
 
 ### Superseded idle-time line (archived, not part of this branch)
 

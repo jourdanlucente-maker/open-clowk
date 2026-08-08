@@ -13,9 +13,10 @@ Two identity signals, both name-only:
    due, and then at the pending cadence until a selected target is in front —
    never on a background timer for the life of the app.
 2. **Executable names** — asked as a yes/no "is a process with this name
-   running?", via name-only process checks (`pgrep -x` /
-   `tasklist /FI IMAGENAME eq`). Never arguments, never command lines, never
-   any other process. The set of names is closed and derived from the approved
+   running?", via whole-name, case-insensitive process checks (`pgrep -xi` /
+   `tasklist /FI IMAGENAME eq`). Never arguments, never command lines —
+   `pgrep`'s `-f`/`--full`, which would widen the match to the command line, is
+   forbidden and pinned by `test/adapters.test.js`. Never any other process. The set of names is closed and derived from the approved
    target list (`platformExeNames` in `electron/targets.js`), and it is asked
    in exactly two places:
    - **at setup**, for the platform's supported target names (e.g.

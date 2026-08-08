@@ -94,14 +94,17 @@ function savePrefs(p) {
  * process is the only evidence the app exists at all. Probing the two agent
  * names alone left every terminal and IDE reported as absent with a dead
  * checkbox. The probed set is closed: exactly the names `platformExeNames`
- * derives from the approved target list, nothing else. */
+ * derives from the approved target list, nothing else.
+ *
+ * The probes are independent and the setup window cannot paint its checklist
+ * until they all answer, so they run concurrently: the first paint waits for
+ * the slowest single probe, not for the sum of every adapter timeout. */
 async function detect() {
   const a = getAdapter();
   if (!a.supported) return { supported: false, message: a.message };
-  const running = {};
-  for (const name of platformExeNames(a.platform)) {
-    running[name] = await a.execRunning(name);
-  }
+  const names = platformExeNames(a.platform);
+  const answers = await Promise.all(names.map((name) => a.execRunning(name)));
+  const running = Object.fromEntries(names.map((name, i) => [name, answers[i]]));
   const targets = detectTargets({
     platform: a.platform,
     probes: {

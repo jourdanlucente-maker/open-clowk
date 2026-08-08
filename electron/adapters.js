@@ -1,9 +1,14 @@
 /* Least-information platform adapters.
  *
  * Foreground detection returns the frontmost application's NAME only.
- * Codex/Claude detection checks executable NAMES only.
+ * Executable detection checks executable NAMES only.
  * Nothing here reads arguments, command lines, prompts, terminal contents,
  * window titles, files' contents, screen pixels, audio, or network data.
+ *
+ * `execRunning(name)` contract: `name` arrives normalized (lower-cased, no
+ * extension), and every platform must match the WHOLE executable name against
+ * it case-insensitively — real binaries are `Cursor`, `Code`,
+ * `WindowsTerminal`. Matching is never widened to the command line.
  *
  * execFile/readFile are injectable so tests run entirely on fixtures.
  */
@@ -61,7 +66,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
         ]);
       },
       async execRunning(name) {
-        return (await run(exec, 'pgrep', ['-x', name])) !== null;
+        return (await run(exec, 'pgrep', ['-xi', name])) !== null;
       },
       appInstalled(bundlePath) {
         try {
@@ -124,7 +129,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
         }
       },
       async execRunning(name) {
-        return (await run(exec, 'pgrep', ['-x', name])) !== null;
+        return (await run(exec, 'pgrep', ['-xi', name])) !== null;
       },
       appInstalled() {
         return false;
