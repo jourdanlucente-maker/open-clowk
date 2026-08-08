@@ -113,6 +113,18 @@ function hostTargets(platform) {
   return TARGETS.filter((t) => t.kind === 'app' && t.platforms.includes(platform));
 }
 
+/* The closed set of executable NAMES this platform's supported targets
+ * declare, normalized and deduplicated. Availability probing asks for these
+ * and nothing else: no arguments, no command lines, no other process. */
+function platformExeNames(platform) {
+  const names = new Set();
+  for (const target of TARGETS) {
+    if (!target.platforms.includes(platform)) continue;
+    for (const exe of target.exeNames || []) names.add(normalizeName(exe));
+  }
+  return [...names];
+}
+
 /* Hosts an agent target may be spotted inside. Codex/Claude have no window of
  * their own, so they are matched through a host app. The user's host choices
  * win: selecting Claude Code + VS Code means VS Code only, never every
@@ -184,30 +196,31 @@ function validatePrefs(input) {
  * touch the real system:
  *   probes.appInstalled(bundlePath) -> bool   (macOS .app presence)
  *   probes.exeRunning(name)         -> bool   (executable-name-only)
- * Statuses: available | not-installed | not-running | unsupported-platform */
+ *   probes.canProbeInstall          -> bool   (does this platform have an
+ *                                              install probe at all?)
+ * Statuses: available | not-installed | not-running | unsupported-platform
+ *
+ * "not-installed" is a claim, so it is only made where it can be checked: a
+ * platform with no install probe (Windows/Linux in this cut) reports an app it
+ * cannot see running as `not-running`, which is what is actually known — and
+ * which keeps the row selectable, so a running Konsole or Windows Terminal is
+ * never locked out by a probe the platform does not have. */
 function detectTargets({ platform, probes }) {
   return TARGETS.map((target) => {
+    const row = { id: target.id, label: target.label, kind: target.kind };
     if (!target.platforms.includes(platform)) {
-      return { id: target.id, label: target.label, kind: target.kind, status: 'unsupported-platform' };
+      return { ...row, status: 'unsupported-platform' };
     }
+    const running = (target.exeNames || []).some((exe) => probes.exeRunning(normalizeName(exe)));
     if (target.kind === 'agent') {
-      const running = (target.exeNames || []).some((exe) => probes.exeRunning(normalizeName(exe)));
-      return {
-        id: target.id,
-        label: target.label,
-        kind: target.kind,
-        status: running ? 'available' : 'not-running',
-      };
+      return { ...row, status: running ? 'available' : 'not-running' };
     }
-    const installed =
-      (target.appBundles || []).some((b) => probes.appInstalled(b)) ||
-      (target.exeNames || []).some((exe) => probes.exeRunning(normalizeName(exe)));
-    return {
-      id: target.id,
-      label: target.label,
-      kind: target.kind,
-      status: installed ? 'available' : 'not-installed',
-    };
+    const bundles = target.appBundles || [];
+    if (running || bundles.some((b) => probes.appInstalled(b))) {
+      return { ...row, status: 'available' };
+    }
+    const installIsKnowable = !!probes.canProbeInstall && bundles.length > 0;
+    return { ...row, status: installIsKnowable ? 'not-installed' : 'not-running' };
   });
 }
 
@@ -218,6 +231,7 @@ module.exports = {
   validatePrefs,
   detectTargets,
   normalizeName,
+  platformExeNames,
   MIN_MINUTES,
   MAX_MINUTES,
 };

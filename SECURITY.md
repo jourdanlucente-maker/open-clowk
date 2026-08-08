@@ -9,10 +9,21 @@ Two identity signals, both name-only:
    one-time Automation consent for System Events and returns the app name
    only; on Windows, the foreground window's **process name** (never its
    title); on X11 Linux, the active window's executable name via
-   `/proc/<pid>/comm`.
-2. **Executable names** `codex` / `claude` — only when those agent targets
-   are selected, via name-only process checks (`pgrep -x` /
-   `tasklist /FI IMAGENAME eq`). Never arguments, never command lines.
+   `/proc/<pid>/comm`. This is read only when a reminder interval is actually
+   due, and then at the pending cadence until a selected target is in front —
+   never on a background timer for the life of the app.
+2. **Executable names** — asked as a yes/no "is a process with this name
+   running?", via name-only process checks (`pgrep -x` /
+   `tasklist /FI IMAGENAME eq`). Never arguments, never command lines, never
+   any other process. The set of names is closed and derived from the approved
+   target list (`platformExeNames` in `electron/targets.js`), and it is asked
+   in exactly two places:
+   - **at setup**, for the platform's supported target names (e.g.
+     `wezterm-gui`, `code`, `konsole`, `WindowsTerminal`, `devenv`, `codex`,
+     `claude`), so the availability checklist is honest rather than blank on
+     platforms with no install probe;
+   - **while running**, only for the executable names of the agent targets you
+     actually selected (`codex` / `claude`), and only when an interval is due.
 
 ## What Open Clowk never does
 
@@ -50,7 +61,12 @@ The boundaries above are executable, not aspirational:
   fields.
 - `test/window-contract.test.js` — full setup→launch→intervention cycle
   through an injected Electron: no forbidden module loads, shutdown quits
-  only the app, no login persistence.
+  only the app, no login persistence, and the display-sized mascot layer is
+  created with no preload, so the one renderer that loads third-party sprite
+  images holds no bridge to the main process.
+- `test/reminder.test.js` — the probe schedule: nothing is read while an
+  interval is merely armed, during an intervention, or during the break, and
+  a slow probe never stacks a second one.
 - `test/adapters.test.js` — adapter commands verified name-only through
   fixtures; unsupported platforms produce clear messages.
 

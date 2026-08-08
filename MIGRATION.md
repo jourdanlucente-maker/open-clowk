@@ -60,6 +60,19 @@ Every change after the import commit is a separate, reviewable commit:
 - `544c6bb` — mascot poses derived from the control card's geometry (passed in
   from the main process) and the entrance moved to the left, so no pose plays
   out behind the card.
+- `a64f98d` — this post-import commit list completed and `AGENTS.md` tidied.
+- `490927c` — minimal headless GitHub Actions workflow
+  (`.github/workflows/test.yml`: `npm install` + `npm test`, Ubuntu, Node 22)
+  so the pull request carries a real status check. No product change.
+- *(this commit)* — final review corrections: availability detection now
+  resolves the whole supported executable-name set for the platform (every
+  promised Windows/Linux terminal and IDE is selectable when running, and a
+  platform with no install probe no longer claims an app is absent); the
+  lifetime two-second frontmost poll is gone — the reminder probes only when
+  an interval is due and then on its bounded pending cadence; the
+  display-sized mascot layer lost its preload/IPC bridge; workflow
+  least-privilege permissions and de-duplicated triggers; documentation
+  matched to the exact probe scope.
 
 ### Superseded idle-time line (archived, not part of this branch)
 

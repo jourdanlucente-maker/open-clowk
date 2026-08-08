@@ -32,6 +32,7 @@ function fixtureExec(map) {
   });
   const adapter = createAdapter({ platform: 'darwin', exec });
   assert.strictEqual(adapter.supported, true);
+  assert.strictEqual(adapter.canProbeInstall, true, 'macOS can check bundle presence');
   (async () => {
     assert.strictEqual(await adapter.frontmost(), 'Terminal', 'frontmost returns the app name only');
     assert.ok(exec.calls[0].includes('name of first application process'), 'queries the name field only');
@@ -43,9 +44,17 @@ function fixtureExec(map) {
     const winExec = fixtureExec({
       powershell: 'WindowsTerminal\r\n',
       'tasklist /NH /FI IMAGENAME eq codex.exe': 'codex.exe   1234 Console   1   50,000 K\r\n',
+      'tasklist /NH /FI IMAGENAME eq WindowsTerminal.exe':
+        'WindowsTerminal.exe   4321 Console   1   90,000 K\r\n',
     });
     const win = createAdapter({ platform: 'win32', exec: winExec });
     assert.strictEqual(win.supported, true);
+    assert.strictEqual(win.canProbeInstall, false, 'Windows has no install probe in this cut');
+    assert.strictEqual(
+      await win.execRunning('WindowsTerminal'),
+      true,
+      'a running host executable is detectable by name, not just the agents'
+    );
     assert.strictEqual(await win.frontmost(), 'WindowsTerminal');
     const psCall = winExec.calls.find((c) => c.startsWith('powershell'));
     assert.ok(psCall.includes('ProcessName'), 'Windows reads the process name');
@@ -66,6 +75,7 @@ function fixtureExec(map) {
       readFile: (p) => (p === '/proc/4242/comm' ? 'konsole\n' : fs.readFileSync(p, 'utf8')),
     });
     assert.strictEqual(x11.supported, true);
+    assert.strictEqual(x11.canProbeInstall, false, 'Linux has no install probe in this cut');
     assert.strictEqual(await x11.frontmost(), 'konsole', 'X11 frontmost resolves to the executable name');
     assert.strictEqual(await x11.execRunning('konsole'), true);
 

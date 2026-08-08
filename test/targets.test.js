@@ -8,7 +8,13 @@
 'use strict';
 
 const assert = require('assert');
-const { TARGETS, matchFrontmost, validatePrefs, detectTargets } = require('../electron/targets');
+const {
+  TARGETS,
+  matchFrontmost,
+  validatePrefs,
+  detectTargets,
+  platformExeNames,
+} = require('../electron/targets');
 
 const NOT_RUNNING = () => false;
 
@@ -124,6 +130,53 @@ const NOT_RUNNING = () => false;
   );
 }
 
+// --- the promised Windows / Linux identities actually match ------------------
+{
+  assert.ok(
+    matchFrontmost({
+      frontmost: 'WindowsTerminal',
+      selected: ['windows-terminal'],
+      platform: 'win32',
+      execRunning: NOT_RUNNING,
+    }),
+    'Windows Terminal frontmost matches on Windows'
+  );
+  assert.ok(
+    matchFrontmost({ frontmost: 'devenv', selected: ['visual-studio'], platform: 'win32', execRunning: NOT_RUNNING }),
+    'Visual Studio frontmost matches on Windows'
+  );
+  assert.ok(
+    matchFrontmost({ frontmost: 'konsole', selected: ['konsole'], platform: 'linux', execRunning: NOT_RUNNING }),
+    'Konsole frontmost matches on Linux'
+  );
+  assert.ok(
+    matchFrontmost({
+      frontmost: 'gnome-terminal-server',
+      selected: ['gnome-terminal'],
+      platform: 'linux',
+      execRunning: NOT_RUNNING,
+    }),
+    'GNOME Terminal frontmost matches on Linux'
+  );
+  assert.ok(
+    matchFrontmost({
+      frontmost: 'wezterm-gui',
+      selected: ['claude-code', 'wezterm'],
+      platform: 'linux',
+      execRunning: (n) => n === 'claude',
+    }),
+    'Claude Code inside a selected Linux host matches'
+  );
+  assert.ok(
+    !matchFrontmost({ frontmost: 'nautilus', selected: ['konsole'], platform: 'linux', execRunning: NOT_RUNNING }),
+    'an unselected Linux app frontmost does not match'
+  );
+  assert.ok(
+    !matchFrontmost({ frontmost: 'konsole', selected: ['konsole'], platform: 'win32', execRunning: NOT_RUNNING }),
+    'a Linux-only target never matches on Windows'
+  );
+}
+
 // --- preference validation ---------------------------------------------------
 {
   assert.ok(validatePrefs({ minutes: 30, targets: ['terminal'] }).ok, 'default-shaped prefs validate');
@@ -148,11 +201,52 @@ const NOT_RUNNING = () => false;
   assert.ok(dupes.ok && dupes.prefs.targets.length === 1, 'duplicates collapse');
 }
 
+// --- the probed executable-name set is closed and platform-scoped ------------
+{
+  assert.deepStrictEqual(
+    platformExeNames('win32').sort(),
+    ['claude', 'code', 'codex', 'cursor', 'devenv', 'wezterm-gui', 'windowsterminal'],
+    'Windows probes exactly the supported executable names'
+  );
+  assert.deepStrictEqual(
+    platformExeNames('linux').sort(),
+    ['claude', 'code', 'codex', 'cursor', 'gnome-terminal-server', 'konsole', 'wezterm-gui'],
+    'Linux probes exactly the supported executable names'
+  );
+  assert.deepStrictEqual(
+    platformExeNames('darwin').sort(),
+    ['claude', 'code', 'codex', 'cursor', 'devenv', 'wezterm-gui'],
+    'macOS probes exactly the supported executable names'
+  );
+
+  // The privacy boundary: detection may ask about these names and nothing else.
+  for (const platform of ['darwin', 'win32', 'linux']) {
+    const asked = [];
+    detectTargets({
+      platform,
+      probes: {
+        canProbeInstall: false,
+        appInstalled: () => false,
+        exeRunning: (name) => {
+          asked.push(name);
+          return false;
+        },
+      },
+    });
+    const allowed = new Set(platformExeNames(platform));
+    assert.ok(
+      asked.length > 0 && asked.every((name) => allowed.has(name)),
+      `${platform}: no name outside the supported set is ever probed`
+    );
+  }
+}
+
 // --- availability detection is honest ----------------------------------------
 {
   const darwin = detectTargets({
     platform: 'darwin',
     probes: {
+      canProbeInstall: true,
       appInstalled: (bundle) => bundle.includes('Terminal.app'),
       exeRunning: (name) => name === 'claude',
     },
@@ -164,6 +258,81 @@ const NOT_RUNNING = () => false;
   assert.strictEqual(byId['gnome-terminal'], 'unsupported-platform', 'Linux-only target reported');
   assert.strictEqual(byId['codex'], 'not-running', 'agent executable not running is reported');
   assert.strictEqual(byId['claude-code'], 'available', 'running agent executable is available');
+}
+
+// --- a running app rescues a target the install probe cannot see --------------
+// macOS only knows the standard bundle paths, so a VS Code living outside
+// /Applications has to be found by its running process or it is unselectable.
+{
+  const byId = Object.fromEntries(
+    detectTargets({
+      platform: 'darwin',
+      probes: {
+        canProbeInstall: true,
+        appInstalled: () => false,
+        exeRunning: (name) => name === 'code',
+      },
+    }).map((t) => [t.id, t.status])
+  );
+  assert.strictEqual(byId['vscode'], 'available', 'a running VS Code counts even outside /Applications');
+  assert.strictEqual(byId['terminal'], 'not-installed', 'a bundle that really is absent is still reported');
+}
+
+// --- Windows: every promised target is genuinely selectable when available ----
+// There is no install probe on Windows in this cut, so the running executable
+// is the whole evidence — wiring it to two agent names left every terminal and
+// IDE reported absent with a dead checkbox.
+{
+  const byId = Object.fromEntries(
+    detectTargets({
+      platform: 'win32',
+      probes: {
+        canProbeInstall: false,
+        appInstalled: () => false,
+        exeRunning: (name) => name === 'windowsterminal' || name === 'code',
+      },
+    }).map((t) => [t.id, t.status])
+  );
+  assert.strictEqual(byId['windows-terminal'], 'available', 'a running Windows Terminal is available');
+  assert.strictEqual(byId['vscode'], 'available', 'a running VS Code is available on Windows');
+  // Negative cases: not seen running, and never falsely claimed absent.
+  for (const id of ['wezterm', 'cursor', 'visual-studio']) {
+    assert.strictEqual(byId[id], 'not-running', `${id} not seen running is reported as not running`);
+  }
+  assert.strictEqual(byId['codex'], 'not-running', 'an agent not running is reported on Windows');
+  for (const id of ['terminal', 'gnome-terminal', 'konsole']) {
+    assert.strictEqual(byId[id], 'unsupported-platform', `${id} is not offered on Windows`);
+  }
+  assert.ok(
+    !Object.values(byId).includes('not-installed'),
+    'a platform with no install probe never claims an app is not installed'
+  );
+}
+
+// --- Linux (X11): same contract -----------------------------------------------
+{
+  const byId = Object.fromEntries(
+    detectTargets({
+      platform: 'linux',
+      probes: {
+        canProbeInstall: false,
+        appInstalled: () => false,
+        exeRunning: (name) => name === 'konsole' || name === 'wezterm-gui',
+      },
+    }).map((t) => [t.id, t.status])
+  );
+  assert.strictEqual(byId['konsole'], 'available', 'a running Konsole is available');
+  assert.strictEqual(byId['wezterm'], 'available', 'a running WezTerm is available on Linux');
+  for (const id of ['gnome-terminal', 'cursor', 'vscode']) {
+    assert.strictEqual(byId[id], 'not-running', `${id} not seen running is reported as not running`);
+  }
+  for (const id of ['terminal', 'windows-terminal', 'visual-studio']) {
+    assert.strictEqual(byId[id], 'unsupported-platform', `${id} is not offered on Linux`);
+  }
+  assert.ok(
+    !Object.values(byId).includes('not-installed'),
+    'a platform with no install probe never claims an app is not installed'
+  );
 }
 
 console.log('targets: all tests passed');

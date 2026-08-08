@@ -52,6 +52,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
       platform,
       supported: true,
       frontmostFailureMessage: FRONTMOST_FAILED.darwin,
+      canProbeInstall: true,
       // Automation consent (one-time) for System Events; returns the app NAME only.
       async frontmost() {
         return run(exec, 'osascript', [
@@ -77,6 +78,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
       platform,
       supported: true,
       frontmostFailureMessage: FRONTMOST_FAILED.win32,
+      canProbeInstall: false,
       // GetForegroundWindow -> PID -> Process NAME only. Never the window title.
       async frontmost() {
         const script = [
@@ -106,6 +108,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
       platform,
       supported: true,
       frontmostFailureMessage: FRONTMOST_FAILED.linux,
+      canProbeInstall: false,
       // X11: active window -> its PID -> /proc/<pid>/comm (executable name only).
       async frontmost() {
         const active = await run(exec, 'xprop', ['-root', '_NET_ACTIVE_WINDOW']);

@@ -43,9 +43,12 @@ A native **setup window** opens (never a browser page):
    (24 hours). For a quick test, set 1 minute.
 2. **Targets** — a checklist of supported apps, detected honestly:
    Terminal.app, Windows Terminal, WezTerm, GNOME Terminal, Konsole, Cursor,
-   VS Code, Visual Studio, Codex, Claude Code. Apps that are not installed,
-   agents that are not running, and platforms a target doesn't support are
-   shown as such — never silently accepted. Pick at least one.
+   VS Code, Visual Studio, Codex, Claude Code. Detection asks two questions
+   only: is the app's bundle where macOS keeps it, and is a process with the
+   app's own executable name running. Platforms a target doesn't support are
+   shown as such, and an app is called *not installed* only where that can
+   actually be checked — on Windows and Linux, where it can't, an app that
+   isn't running says so and stays selectable. Pick at least one.
 3. **Launch** — arms the timer and closes the setup window.
 
 At each interval the transparent, frameless, always-on-top mascot appears —
@@ -58,7 +61,8 @@ An intervention is **two layers**, and the split is deliberate:
 1. **The mascot layer** — display-sized, showing the robot walking in and
    opening your clocks. It is created non-focusable and fully click-through,
    so it never takes a click or a keystroke from the terminal underneath. It
-   is decoration; it sends nothing.
+   is decoration: it is loaded without a preload script, so it has no bridge
+   to the app and cannot send anything.
 2. **The control card** — a small window in the bottom-right corner that
    carries the actions. It is an ordinary hit-tested window, so its buttons
    work on every platform and keep working after you click back into your
@@ -134,9 +138,11 @@ by `test/overlay-dom.test.js`.
 Almost nothing, on purpose. Open Clowk reads:
 
 - the **frontmost application's name** (to know whether a selected target is
-  in front), and
-- for Codex/Claude targets, whether an **executable named** `codex`/`claude`
-  is running.
+  in front) — read only when an interval is actually due, never on a
+  background timer for the life of the app, and
+- whether a process with a **supported target's executable name** is running:
+  the whole list at setup, so the checklist is honest, and afterwards only
+  `codex`/`claude` for the agent targets you selected.
 
 It never records or inspects arguments, commands, prompts, terminal
 contents, window titles, keystrokes, clicks, files, screen images, audio,

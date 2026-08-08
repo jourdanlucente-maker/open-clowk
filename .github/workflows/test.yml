@@ -1,9 +1,14 @@
 name: test
 
+# Pull requests carry the required check. Pushes are limited to `main` so a PR
+# head is not tested twice for the same commit.
 on:
   push:
-    branches: [main, 'fm/**']
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   test:

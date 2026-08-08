@@ -29,6 +29,8 @@ const {
   detectTargets,
   matchFrontmost,
   getTarget,
+  normalizeName,
+  platformExeNames,
   MIN_MINUTES,
   MAX_MINUTES,
 } = require('./targets');
@@ -38,8 +40,10 @@ const PREFS_DIR = path.join(os.homedir(), '.open-clowk');
 const PREFS_FILE = path.join(PREFS_DIR, 'prefs.json');
 
 // Consecutive failed frontmost probes before the compatibility message is
-// surfaced. At a 2s poll this is ~6s — long enough to ride out one slow probe,
-// short enough that a denied permission never fails silently forever.
+// surfaced. The probe only runs once an interval is due and then on the
+// reminder's pending cadence, so this is one due interval plus two pending
+// polls — long enough to ride out one slow probe, short enough that a denied
+// permission never fails silently forever.
 const FRONTMOST_FAILURES_BEFORE_COMPAT = 3;
 
 // The control card sits in the primary display's bottom-right corner.
@@ -84,18 +88,26 @@ function savePrefs(p) {
   }
 }
 
+/* Availability for the setup checklist. Every supported target — not just the
+ * two agents — gets its declared executable NAME resolved here, because on
+ * Windows/Linux (and for a macOS app living outside /Applications) the running
+ * process is the only evidence the app exists at all. Probing the two agent
+ * names alone left every terminal and IDE reported as absent with a dead
+ * checkbox. The probed set is closed: exactly the names `platformExeNames`
+ * derives from the approved target list, nothing else. */
 async function detect() {
   const a = getAdapter();
   if (!a.supported) return { supported: false, message: a.message };
   const running = {};
-  for (const name of ['codex', 'claude']) {
+  for (const name of platformExeNames(a.platform)) {
     running[name] = await a.execRunning(name);
   }
   const targets = detectTargets({
     platform: a.platform,
     probes: {
+      canProbeInstall: !!a.canProbeInstall,
       appInstalled: (bundle) => a.appInstalled(bundle),
-      exeRunning: (name) => !!running[name],
+      exeRunning: (name) => running[name] === true,
     },
   });
   return { supported: true, targets };
@@ -135,13 +147,17 @@ function showSetup() {
  * Layer 1 (mascot) is display-sized, so it may never take a click or a
  * keystroke: it is created non-focusable, shown inactive, and hit-testing is
  * turned off outright. No pointer forwarding is involved, so it behaves the
- * same on Linux, where `forward` is not supported.
+ * same on Linux, where `forward` is not supported. It is decoration, so it
+ * gets NO preload and therefore no bridge to the main process — it is also the
+ * one renderer that loads third-party sprite images, so it is the one that
+ * should hold the least authority.
  *
  * Layer 2 (control card) is small, opaque and hit-tested normally on every
- * platform. It carries the three actions from the first frame, so reaching
- * them never depends on the animation finishing, on forwarded mouse moves, or
- * on the intervention holding keyboard focus. */
-function interventionWindowOptions(extra) {
+ * platform. It is the only layer with the bridge, and it carries the three
+ * actions from the first frame, so reaching them never depends on the
+ * animation finishing, on forwarded mouse moves, or on the intervention
+ * holding keyboard focus. */
+function interventionWindowOptions(bounds, { bridge }) {
   return Object.assign(
     {
       frame: false,
@@ -153,12 +169,11 @@ function interventionWindowOptions(extra) {
       fullscreenable: false,
       focusable: false,
       show: false,
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-      },
+      webPreferences: bridge
+        ? { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
+        : { contextIsolation: true, nodeIntegration: false },
     },
-    extra
+    bounds
   );
 }
 
@@ -175,7 +190,9 @@ function showOverlay() {
     cardMargin: String(CARD_MARGIN),
   };
 
-  overlayWindow = new BrowserWindow(interventionWindowOptions({ width, height, x: 0, y: 0 }));
+  overlayWindow = new BrowserWindow(
+    interventionWindowOptions({ width, height, x: 0, y: 0 }, { bridge: false })
+  );
   overlayWindow.setIgnoreMouseEvents(true);
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -190,12 +207,15 @@ function showOverlay() {
   });
 
   controlWindow = new BrowserWindow(
-    interventionWindowOptions({
-      width: CARD_WIDTH,
-      height: CARD_HEIGHT,
-      x: Math.max(0, width - CARD_WIDTH - CARD_MARGIN),
-      y: Math.max(0, height - CARD_HEIGHT - CARD_MARGIN),
-    })
+    interventionWindowOptions(
+      {
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        x: Math.max(0, width - CARD_WIDTH - CARD_MARGIN),
+        y: Math.max(0, height - CARD_HEIGHT - CARD_MARGIN),
+      },
+      { bridge: true }
+    )
   );
   controlWindow.setAlwaysOnTop(true, 'screen-saver');
   controlWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -263,12 +283,9 @@ async function launch(input) {
   frontmostFailures = 0;
   clearCompatMessage();
 
-  // Prime the executable-name cache only when an agent target actually needs it.
-  if (hasAgentTarget()) await refreshExecRunning();
-
   if (reminder) reminder.stop();
   reminder = createReminder({
-    checkFrontmost: () => pendingFrontmostMatch,
+    checkFrontmost: checkFrontmostNow,
     onIntervene: showOverlay,
   });
 
@@ -281,10 +298,7 @@ async function launch(input) {
   return { ok: true };
 }
 
-// Set synchronously by the frontmost poller; the reminder reads it when an
-// interval elapses and while an intervention is pending.
-let pendingFrontmostMatch = false;
-let frontmostPollInFlight = false;
+let frontmostProbe = null;
 let frontmostFailures = 0;
 let runtimeCompatMessage = null;
 let compatDelivered = false;
@@ -317,7 +331,6 @@ function clearCompatMessage() {
  * Denied macOS Automation consent returns null forever, so collapsing both
  * cases to `false` would leave the app running windowless and mute. */
 function noteFrontmostProbeFailure() {
-  pendingFrontmostMatch = false;
   frontmostFailures += 1;
   if (frontmostFailures < FRONTMOST_FAILURES_BEFORE_COMPAT) return;
   if (!runtimeCompatMessage) {
@@ -330,20 +343,22 @@ function noteFrontmostProbeFailure() {
   surfaceCompatMessage();
 }
 
-async function pollFrontmost() {
-  if (!launched || !reminder || frontmostPollInFlight) return;
-  // Probes are given up to 4s; without this guard a slow one lets polls pile up.
-  frontmostPollInFlight = true;
+async function probeFrontmostMatch() {
+  if (!launched) return false;
   try {
     const a = getAdapter();
     const front = await a.frontmost();
     if (!front) {
       noteFrontmostProbeFailure();
-      return;
+      return false;
     }
     frontmostFailures = 0;
     clearCompatMessage();
-    pendingFrontmostMatch = matchFrontmost({
+    // Only now, and only for the agent targets actually selected, is any
+    // executable name looked up — no agent selected means nothing spawns.
+    const agentExeNames = selectedAgentExeNames();
+    if (agentExeNames.length) await refreshExecRunning(agentExeNames);
+    return matchFrontmost({
       frontmost: front,
       selected: prefs.targets,
       platform: a.platform,
@@ -351,41 +366,45 @@ async function pollFrontmost() {
     });
   } catch (e) {
     noteFrontmostProbeFailure();
-  } finally {
-    frontmostPollInFlight = false;
+    return false;
   }
 }
 
-const cachedExecRunning = {};
-let execPollInFlight = false;
-
-function hasAgentTarget() {
-  return prefs.targets.some((id) => {
-    const t = getTarget(id);
-    return !!t && t.kind === 'agent';
-  });
+/* The reminder asks for this exactly when an interval is due and then on its
+ * bounded pending cadence — never on a lifetime timer, so an armed interval, an
+ * intervention on screen, and the five-minute break all cost nothing. Probes
+ * are given up to 4s, so concurrent askers share the one in flight rather than
+ * stacking a second osascript/xprop/PowerShell round trip. */
+function checkFrontmostNow() {
+  if (!frontmostProbe) {
+    frontmostProbe = probeFrontmostMatch().finally(() => {
+      frontmostProbe = null;
+    });
+  }
+  return frontmostProbe;
 }
 
-async function refreshExecRunning() {
-  if (execPollInFlight) return;
-  execPollInFlight = true;
+const cachedExecRunning = {};
+
+function selectedAgentExeNames() {
+  const names = new Set();
+  for (const id of prefs.targets) {
+    const t = getTarget(id);
+    if (!t || t.kind !== 'agent') continue;
+    for (const exe of t.exeNames || []) names.add(normalizeName(exe));
+  }
+  return [...names];
+}
+
+async function refreshExecRunning(names) {
   try {
     const a = getAdapter();
-    for (const name of ['codex', 'claude']) {
+    for (const name of names) {
       cachedExecRunning[name] = await a.execRunning(name);
     }
   } catch (e) {
     // name-only probes are best effort; a failure just means "not running"
-  } finally {
-    execPollInFlight = false;
   }
-}
-
-/* Spawning pgrep/tasklist forever costs the user battery for nothing when no
- * agent target is selected — and before Launch there is nothing to watch. */
-async function refreshExecRunningIfWatched() {
-  if (!launched || !hasAgentTarget()) return;
-  await refreshExecRunning();
 }
 
 /* ---------- wiring ---------- */
@@ -430,8 +449,8 @@ if (!gotSingleInstanceLock) {
     if (!a.supported) console.log(`[open-clowk] ${a.message}`);
     prefs = loadPrefs();
     showSetup();
-    setInterval(pollFrontmost, 2000);
-    setInterval(refreshExecRunningIfWatched, 5000);
+    // No lifetime pollers: the reminder is the only thing that asks for the
+    // frontmost application, and only once an interval is actually due.
     // Reopening from the dock/taskbar is the other way back to settings and
     // Quit. Registered here so it can never fire before the app is ready.
     app.on('activate', () => showSetup());
@@ -454,12 +473,8 @@ module.exports = {
   loadPrefs,
   DEFAULT_MINUTES,
   _test: {
-    setFrontmostMatch: (v) => {
-      pendingFrontmostMatch = v;
-    },
     getReminder: () => reminder,
-    pollFrontmost,
-    refreshExecRunningIfWatched,
+    checkFrontmostNow,
     getCompatMessage: () => runtimeCompatMessage,
   },
 };

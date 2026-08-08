@@ -1,4 +1,8 @@
-/* Manual-clock timers for deterministic reminder tests. */
+/* Manual-clock timers for deterministic reminder tests.
+ *
+ * `advance` awaits each due callback, so an async scheduled task (the reminder's
+ * frontmost probe) is fully settled before the clock moves on — the schedule
+ * stays deterministic without any real time passing. */
 
 'use strict';
 
@@ -22,7 +26,7 @@ function createFakeTimers() {
     clearInterval: (t) => {
       if (t) t.cancelled = true;
     },
-    advance(ms) {
+    async advance(ms) {
       const end = now + ms;
       for (;;) {
         const due = tasks
@@ -32,7 +36,7 @@ function createFakeTimers() {
         now = due.at;
         if (due.interval) due.at = now + due.interval;
         else due.cancelled = true;
-        due.fn();
+        await due.fn();
       }
       now = end;
     },

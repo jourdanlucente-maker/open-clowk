@@ -34,6 +34,7 @@ adapters.createAdapter = () => ({
   platform: 'darwin',
   supported: true,
   frontmostFailureMessage: adapters.FRONTMOST_FAILED.darwin,
+  canProbeInstall: true,
   frontmost: async () => {
     probeCalls.frontmost++;
     return front.current;
@@ -110,14 +111,23 @@ function cleanup() {
   assert.strictEqual(reminder.state, 'armed');
   assert.strictEqual(reminder.minutes, 30);
 
-  // --- executable probes only run when an agent target actually needs them -----
+  // --- probing is due-driven, not a lifetime timer ----------------------------
+  // Nothing may spawn a foreground probe while the interval is merely armed;
+  // the reminder owns the schedule (test/reminder.test.js pins it), so arming
+  // must leave the probe counters untouched.
   {
-    const before = probeCalls.execRunning;
-    await main._test.refreshExecRunningIfWatched();
+    const frontBefore = probeCalls.frontmost;
+    const execBefore = probeCalls.execRunning;
+    await flush();
+    assert.strictEqual(probeCalls.frontmost, frontBefore, 'an armed interval spawns no frontmost probe');
+
+    // ...and when a probe does run, no Codex/Claude target selected means no
+    // executable-name lookup happens at all.
+    assert.strictEqual(await main._test.checkFrontmostNow(), true, 'the due-time probe sees Terminal');
     assert.strictEqual(
       probeCalls.execRunning,
-      before,
-      'no Codex/Claude target selected: nothing spawns pgrep every 5s'
+      execBefore,
+      'no Codex/Claude target selected: nothing spawns pgrep'
     );
   }
 
@@ -126,8 +136,7 @@ function cleanup() {
   // intervention, so later cycles do not depend on a running index.
   const layers = () => electronState.windows.slice(-2);
 
-  main._test.setFrontmostMatch(true);
-  reminder.elapseNow();
+  await reminder.elapseNow();
   assert.strictEqual(electronState.windows.length, 3, 'one intervention shows the mascot layer and the control card');
   const [mascot, card] = layers();
 
@@ -142,6 +151,23 @@ function cleanup() {
     assert.strictEqual(win.opts.show, false, `${what} does not auto-show (and therefore does not activate)`);
     assert.strictEqual(win.calls.showInactive, 1, `${what} is shown without taking focus`);
     assert.strictEqual(win.calls.focus, 0, `${what} never grabs focus`);
+  }
+
+  // --- authority lives on the card, never on the display-sized layer -----------
+  // The mascot layer is decoration AND the one renderer that loads third-party
+  // sprite images, so it gets no preload and therefore no `window.clowk`: it
+  // cannot launch, quit, or send an action even if its content is compromised.
+  assert.ok(
+    !mascot.opts.webPreferences.preload,
+    'the mascot layer is created with no preload — no IPC bridge at all'
+  );
+  assert.ok(
+    card.opts.webPreferences.preload &&
+      card.opts.webPreferences.preload.endsWith(path.join('electron', 'preload.js')),
+    'the control card keeps the bridge, because it carries the three actions'
+  );
+  for (const [win, what] of [[mascot, 'mascot layer'], [card, 'control card']]) {
+    assert.strictEqual(win.opts.webPreferences.contextIsolation, true, `${what} keeps context isolation`);
   }
 
   assert.deepStrictEqual(
@@ -217,21 +243,21 @@ function cleanup() {
   // --- either layer closed from outside: tracking must recover ------------------
   // Both layers are non-focusable and skip the taskbar, so this is a
   // window-manager kill rather than Cmd+W — it must still re-arm.
-  reminder.elapseNow();
+  await reminder.elapseNow();
   const [mascot2, card2] = layers();
   card2.close(); // no action — the window-manager path, on the card this time
   assert.ok(mascot2.closed, 'closing one layer takes the other with it');
   assert.strictEqual(reminder.state, 'armed', 'external close re-arms (inherited bug fixed)');
 
   // --- Take a break (countdown completed in the renderer): dismiss + re-arm ----
-  reminder.elapseNow();
+  await reminder.elapseNow();
   const [mascot3, card3] = layers();
   action('break');
   assert.ok(mascot3.closed && card3.closed, 'break closes both layers after the countdown');
   assert.strictEqual(reminder.state, 'armed', 'break restarts the original interval');
 
   // --- Shut down: quits Open Clowk only ----------------------------------------
-  reminder.elapseNow();
+  await reminder.elapseNow();
   const [mascot4, card4] = layers();
   action('shutdown');
   assert.ok(mascot4.closed && card4.closed, 'shutdown closes both layers');
@@ -243,7 +269,7 @@ function cleanup() {
   // --- a lost frontmost capability is reported, never silently swallowed --------
   const setupWindowsBefore = electronState.windows.length;
   front.current = null;
-  for (let i = 0; i < 3; i++) await main._test.pollFrontmost();
+  for (let i = 0; i < 3; i++) await main._test.checkFrontmostNow();
   const compat = main._test.getCompatMessage();
   assert.ok(compat, 'a frontmost probe that stops answering produces a compatibility message');
   assert.ok(/Automation/.test(compat), 'the macOS message names the permission to grant');
@@ -261,7 +287,7 @@ function cleanup() {
   assert.strictEqual(compatState.running, true, 'setup knows the app is already running');
 
   front.current = 'Terminal';
-  await main._test.pollFrontmost();
+  await main._test.checkFrontmostNow();
   assert.strictEqual(main._test.getCompatMessage(), null, 'a probe that recovers clears the message');
   assert.deepStrictEqual(
     reopened.webContents.sent.slice(-1),
@@ -276,7 +302,7 @@ function cleanup() {
     const windowsBefore = electronState.windows.length;
     const sentBefore = reopened.webContents.sent.length;
     front.current = null;
-    for (let i = 0; i < 3; i++) await main._test.pollFrontmost();
+    for (let i = 0; i < 3; i++) await main._test.checkFrontmostNow();
     assert.strictEqual(
       electronState.windows.length,
       windowsBefore,
@@ -290,7 +316,7 @@ function cleanup() {
     assert.strictEqual(reopened.calls.focus > 0, true, 'and that window is brought forward');
 
     front.current = 'Terminal';
-    await main._test.pollFrontmost();
+    await main._test.checkFrontmostNow();
   }
 
   // --- Quit from setup: the way out when no intervention ever arrives -----------
@@ -307,7 +333,7 @@ function cleanup() {
 
   cleanup();
   console.log('window contract: all tests passed');
-  process.exit(0); // frontmost/exec pollers keep the loop alive by design
+  process.exit(0);
 })().catch((err) => {
   cleanup();
   console.error(err);
