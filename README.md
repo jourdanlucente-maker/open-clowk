@@ -53,22 +53,32 @@ only while a selected target is frontmost (Codex/Claude additionally require
 their executable to be running). If you've switched away, the intervention
 stays pending and shows the moment you come back.
 
-Every intervention offers exactly three actions:
+An intervention is **two layers**, and the split is deliberate:
 
-- **Take a break 🌱** — a visible five-minute countdown runs on screen, then
-  the overlay dismisses and the original interval restarts.
+1. **The mascot layer** — display-sized, showing the robot walking in and
+   opening your clocks. It is created non-focusable and fully click-through,
+   so it never takes a click or a keystroke from the terminal underneath. It
+   is decoration; it sends nothing.
+2. **The control card** — a small window in the bottom-right corner that
+   carries the actions. It is an ordinary hit-tested window, so its buttons
+   work on every platform and keep working after you click back into your
+   terminal.
+
+The card is there from the first frame: you never have to wait out the
+animation to dismiss an intervention. Every intervention offers exactly three
+actions:
+
+- **Take a break 🌱** — a visible five-minute countdown runs on the card,
+  then both layers dismiss and the original interval restarts.
 - **Ignore 🙄** — dismisses immediately and restarts the full interval.
 - **Shut down ✕** — quits Open Clowk. Only Open Clowk. It never closes,
   pauses, kills, injects into, or modifies your terminal, IDE, Codex, or
   Claude session.
 
-**Esc** is always available and resolves whatever is in flight: during the
-walk-in (before the buttons exist) it acts as Ignore; during the countdown
-(while the buttons are hidden) it ends the break early. Either way the
-interval restarts — it is not a fourth action.
-
-The overlay window is display-sized but **click-through everywhere except the
-message box**, so it never swallows a click on empty pixels.
+During a break the card keeps a **Resume now** button on screen for the whole
+five minutes, so ending it early never depends on the intervention holding
+keyboard focus. Resume now resolves the break already running — it is not a
+fourth action.
 
 If you pick a Codex/Claude target *together with* host apps, only those hosts
 count: **Claude Code + VS Code** never triggers in Terminal.app. Pick an agent
@@ -83,13 +93,19 @@ can **Relaunch** with new settings or **Quit Open Clowk**.
 
 ## Known limits (deliberate, first cut)
 
-- **The overlay appears on the primary display only.** If your selected
-  target is frontmost on a secondary monitor, the mascot still walks onto the
-  primary one. This is an accepted owner decision for this cut, not an
-  oversight — the window contract is pinned by `test/window-contract.test.js`.
-  Multi-display placement is a separate decision.
+- **Both layers appear on the primary display only.** If your selected target
+  is frontmost on a secondary monitor, the mascot and the control card still
+  appear on the primary one. This is an accepted owner decision for this cut,
+  not an oversight — the window contract is pinned by
+  `test/window-contract.test.js`. Multi-display placement is a separate
+  decision.
 - **No tray icon.** The setup window is the only surface: reopen it by
   starting Open Clowk again or via its dock/taskbar icon.
+- **No keyboard shortcut dismisses an intervention.** Neither layer takes
+  keyboard focus, by design, so the pointer is the way — which is why the
+  card's buttons are always visible rather than hidden behind the animation
+  or a countdown. Open Clowk registers no global shortcut and captures no
+  keystrokes (`test/no-browser-static.test.js` enforces it).
 
 ## Platform support
 

@@ -42,10 +42,16 @@ const PREFS_FILE = path.join(PREFS_DIR, 'prefs.json');
 // short enough that a denied permission never fails silently forever.
 const FRONTMOST_FAILURES_BEFORE_COMPAT = 3;
 
+// The control card sits in the primary display's bottom-right corner.
+const CARD_WIDTH = 430;
+const CARD_HEIGHT = 200;
+const CARD_MARGIN = 40;
+
 let adapter = null; // created lazily so tests can inject fixtures
 let reminder = null;
 let setupWindow = null;
 let overlayWindow = null;
+let controlWindow = null;
 let launched = false;
 let prefs = { minutes: DEFAULT_MINUTES, targets: [] };
 
@@ -94,6 +100,9 @@ async function detect() {
 /* ---------- windows ---------- */
 
 function showSetup() {
+  // An 'activate' or second-instance event can arrive before the app is ready,
+  // and constructing a BrowserWindow then throws.
+  if (typeof app.isReady === 'function' && !app.isReady()) return;
   if (setupWindow) {
     if (setupWindow.isMinimized && setupWindow.isMinimized()) setupWindow.restore();
     if (setupWindow.show) setupWindow.show();
@@ -117,52 +126,88 @@ function showSetup() {
   });
 }
 
+/* An intervention is two windows, and the split is the whole point.
+ *
+ * Layer 1 (mascot) is display-sized, so it may never take a click or a
+ * keystroke: it is created non-focusable, shown inactive, and hit-testing is
+ * turned off outright. No pointer forwarding is involved, so it behaves the
+ * same on Linux, where `forward` is not supported.
+ *
+ * Layer 2 (control card) is small, opaque and hit-tested normally on every
+ * platform. It carries the three actions from the first frame, so reaching
+ * them never depends on the animation finishing, on forwarded mouse moves, or
+ * on the intervention holding keyboard focus. */
+function interventionWindowOptions(extra) {
+  return Object.assign(
+    {
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      hasShadow: false,
+      fullscreenable: false,
+      focusable: false,
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+      },
+    },
+    extra
+  );
+}
+
 function showOverlay() {
-  if (overlayWindow) return;
+  if (overlayWindow || controlWindow) return;
 
   const { width, height } = screen.getPrimaryDisplay().bounds;
-  overlayWindow = new BrowserWindow({
-    width,
-    height,
-    x: 0,
-    y: 0,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    hasShadow: false,
-    fullscreenable: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-    },
-  });
+  const query = { interval: String(prefs.minutes) };
 
+  overlayWindow = new BrowserWindow(interventionWindowOptions({ width, height, x: 0, y: 0 }));
+  overlayWindow.setIgnoreMouseEvents(true);
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  // The overlay is display-sized but mostly empty pixels. Stay click-through by
-  // default (forwarding moves so the renderer can still track the pointer); the
-  // renderer re-enables hit-testing only while the pointer is over the message
-  // box. Without this the mascot swallows every click on the display, including
-  // the ~12s walk-in and the whole five-minute break countdown.
-  setOverlayInteractive(false);
-  overlayWindow.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), {
-    query: { interval: String(prefs.minutes) },
-  });
-
+  overlayWindow.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), { query });
+  overlayWindow.showInactive();
   overlayWindow.on('closed', () => {
     overlayWindow = null;
     // External close (Cmd+W / Alt+F4): never leave tracking paused —
     // the interval re-arms exactly like a dismissal.
-    if (reminder) reminder.resolve('closed');
+    dismissIntervention('closed');
+  });
+
+  controlWindow = new BrowserWindow(
+    interventionWindowOptions({
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      x: Math.max(0, width - CARD_WIDTH - CARD_MARGIN),
+      y: Math.max(0, height - CARD_HEIGHT - CARD_MARGIN),
+    })
+  );
+  controlWindow.setAlwaysOnTop(true, 'screen-saver');
+  controlWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  controlWindow.loadFile(path.join(__dirname, '..', 'overlay', 'control.html'), { query });
+  controlWindow.showInactive();
+  controlWindow.on('closed', () => {
+    controlWindow = null;
+    dismissIntervention('closed');
   });
 }
 
-function setOverlayInteractive(interactive) {
-  if (!overlayWindow || !overlayWindow.setIgnoreMouseEvents) return;
-  if (interactive) overlayWindow.setIgnoreMouseEvents(false);
-  else overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+let dismissing = false;
+
+/* Both layers live and die together; whichever one goes first takes the other
+ * with it, and the reminder is resolved exactly once per intervention. */
+function dismissIntervention(outcome) {
+  if (dismissing) return;
+  dismissing = true;
+  const open = [overlayWindow, controlWindow].filter(Boolean);
+  overlayWindow = null;
+  controlWindow = null;
+  for (const w of open) w.close();
+  dismissing = false;
+  if (outcome && reminder) reminder.resolve(outcome);
 }
 
 function handleOverlayAction(reason) {
@@ -170,13 +215,12 @@ function handleOverlayAction(reason) {
   if (reason === 'shutdown') {
     // Quit Open Clowk only. Never touch the selected terminal/IDE/agent.
     reminder.resolve('shutdown');
-    if (overlayWindow) overlayWindow.close();
+    dismissIntervention(null);
     app.quit();
     return;
   }
-  // 'break' (countdown finished) and 'ignore' both dismiss + re-arm.
-  reminder.resolve(reason === 'break' ? 'break' : 'ignore');
-  if (overlayWindow) overlayWindow.close();
+  // 'break' (countdown finished or Resume now) and 'ignore' dismiss + re-arm.
+  dismissIntervention(reason === 'break' ? 'break' : 'ignore');
 }
 
 /* ---------- launch ---------- */
@@ -205,7 +249,7 @@ async function launch(input) {
   savePrefs(prefs);
   launched = true;
   frontmostFailures = 0;
-  runtimeCompatMessage = null;
+  clearCompatMessage();
 
   // Prime the executable-name cache only when an agent target actually needs it.
   if (hasAgentTarget()) await refreshExecRunning();
@@ -231,6 +275,31 @@ let pendingFrontmostMatch = false;
 let frontmostPollInFlight = false;
 let frontmostFailures = 0;
 let runtimeCompatMessage = null;
+let compatDelivered = false;
+
+function sendCompatToSetup(message) {
+  const wc = setupWindow && setupWindow.webContents;
+  if (wc && typeof wc.send === 'function') wc.send('setup:compat', message);
+}
+
+/* showSetup only focuses a window that is already open, and setup.js reads the
+ * message once per load — so an already-open window has to be told directly,
+ * or the message the user needs is the one window they are staring at. */
+function surfaceCompatMessage() {
+  if (compatDelivered) return;
+  compatDelivered = true;
+  console.log(`[open-clowk] ${runtimeCompatMessage}`);
+  const alreadyOpen = setupWindow;
+  showSetup();
+  if (alreadyOpen && alreadyOpen === setupWindow) sendCompatToSetup(runtimeCompatMessage);
+}
+
+function clearCompatMessage() {
+  if (!runtimeCompatMessage) return;
+  runtimeCompatMessage = null;
+  compatDelivered = false;
+  sendCompatToSetup(null);
+}
 
 /* A null/throwing probe is a lost capability, not "your target is elsewhere".
  * Denied macOS Automation consent returns null forever, so collapsing both
@@ -238,14 +307,15 @@ let runtimeCompatMessage = null;
 function noteFrontmostProbeFailure() {
   pendingFrontmostMatch = false;
   frontmostFailures += 1;
-  if (frontmostFailures < FRONTMOST_FAILURES_BEFORE_COMPAT || runtimeCompatMessage) return;
-  const a = getAdapter();
-  runtimeCompatMessage =
-    a.frontmostFailureMessage ||
-    `Open Clowk cannot read the frontmost application on ${a.platform}. No intervention ` +
-      'can appear until it succeeds; there is no browser or global fallback.';
-  console.log(`[open-clowk] ${runtimeCompatMessage}`);
-  showSetup();
+  if (frontmostFailures < FRONTMOST_FAILURES_BEFORE_COMPAT) return;
+  if (!runtimeCompatMessage) {
+    const a = getAdapter();
+    runtimeCompatMessage =
+      a.frontmostFailureMessage ||
+      `Open Clowk cannot read the frontmost application on ${a.platform}. No intervention ` +
+        'can appear until it succeeds; there is no browser or global fallback.';
+  }
+  surfaceCompatMessage();
 }
 
 async function pollFrontmost() {
@@ -260,7 +330,7 @@ async function pollFrontmost() {
       return;
     }
     frontmostFailures = 0;
-    runtimeCompatMessage = null;
+    clearCompatMessage();
     pendingFrontmostMatch = matchFrontmost({
       frontmost: front,
       selected: prefs.targets,
@@ -325,14 +395,12 @@ ipcMain.handle('setup:launch', (_event, input) => launch(input));
 // the way out once the app is running windowless.
 ipcMain.handle('setup:quit', () => {
   if (reminder) reminder.stop();
-  if (overlayWindow) overlayWindow.close();
+  dismissIntervention(null);
   app.quit();
   return { ok: true };
 });
 
 ipcMain.on('clowk-action', (_event, reason) => handleOverlayAction(reason));
-
-ipcMain.on('clowk-interactive', (_event, interactive) => setOverlayInteractive(!!interactive));
 
 // A second launch must not mean a second timer, a second pair of pollers, and a
 // second display-sized overlay stacked on the first — it reopens this one's setup.
@@ -352,10 +420,10 @@ if (!gotSingleInstanceLock) {
     showSetup();
     setInterval(pollFrontmost, 2000);
     setInterval(refreshExecRunningIfWatched, 5000);
+    // Reopening from the dock/taskbar is the other way back to settings and
+    // Quit. Registered here so it can never fire before the app is ready.
+    app.on('activate', () => showSetup());
   });
-
-  // Reopening from the dock/taskbar is the other way back to settings and Quit.
-  app.on('activate', () => showSetup());
 
   app.on('window-all-closed', () => {
     // Before Launch, closing setup ends the app. After Launch the reminder runs
@@ -381,6 +449,5 @@ module.exports = {
     pollFrontmost,
     refreshExecRunningIfWatched,
     getCompatMessage: () => runtimeCompatMessage,
-    setOverlayInteractive,
   },
 };

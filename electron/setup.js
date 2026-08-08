@@ -9,7 +9,17 @@ const STATUS_LABELS = {
   'unsupported-platform': 'not available on this platform',
 };
 
-const state = { minutes: 30, selected: new Set(), supported: false };
+const state = { minutes: 30, selected: new Set(), supported: false, hardCompat: false };
+
+/* The message can arrive after load: the main process pushes it when the
+ * frontmost probe stops answering while this window is already open. An
+ * unsupported-platform message outranks it and is never cleared. */
+function showCompat(message) {
+  if (state.hardCompat && !message) return;
+  const compat = document.getElementById('compat');
+  compat.hidden = !message;
+  compat.textContent = message || '';
+}
 
 // Mirrors the bounds the main process enforces in validatePrefs; the main
 // process stays the authority, this only keeps the message immediate.
@@ -73,16 +83,14 @@ async function init() {
     interval.max = String(limits.max);
   }
 
-  const compat = document.getElementById('compat');
   if (!s.supported) {
-    compat.hidden = false;
-    compat.textContent = s.message;
+    state.hardCompat = true;
+    showCompat(s.message);
     document.getElementById('launch').disabled = true;
   } else if (s.compatMessage) {
     // A capability that was granted at Launch can be revoked later; when the
     // frontmost probe stops answering, this window is how the user hears it.
-    compat.hidden = false;
-    compat.textContent = s.compatMessage;
+    showCompat(s.compatMessage);
   }
 
   if (s.running) {
@@ -115,5 +123,7 @@ document.getElementById('launch').addEventListener('click', async () => {
 });
 
 document.getElementById('quit').addEventListener('click', () => window.clowk.quit());
+
+window.clowk.onCompatMessage(showCompat);
 
 init();

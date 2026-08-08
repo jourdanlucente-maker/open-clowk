@@ -40,12 +40,25 @@ function installFakeElectron() {
         loadFile: [],
         focus: 0,
         show: 0,
+        showInactive: 0,
         restore: 0,
       };
       this.handlers = {};
       this.closed = false;
       this.minimized = false;
+      this.webContents = {
+        sent: [],
+        send: (...args) => {
+          this.webContents.sent.push(args);
+        },
+      };
       state.windows.push(this);
+    }
+    showInactive() {
+      this.calls.showInactive++;
+    }
+    isDestroyed() {
+      return this.closed;
     }
     setAlwaysOnTop(...args) {
       this.calls.setAlwaysOnTop.push(args);
@@ -85,6 +98,7 @@ function installFakeElectron() {
   const fakeElectron = {
     app: {
       whenReady: () => Promise.resolve(),
+      isReady: () => true,
       requestSingleInstanceLock: () => {
         state.singleInstanceLockCalls++;
         return state.singleInstanceLockGranted;

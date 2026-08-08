@@ -133,27 +133,4 @@ body.sprites #robot-img { display: block; }
 #bubble p { font-size: 14.5px; line-height: 1.5; margin-bottom: 10px; }
 .tictac { font-weight: 700; color: #e8632a; }
 
-.bubble-buttons { display: flex; gap: 10px; margin: 14px 0 10px; }
-.bubble-buttons button {
-  font: 700 13.5px 'SF Mono', Menlo, monospace;
-  padding: 10px 14px; border-radius: 10px; cursor: pointer;
-  border: 2.5px solid #17130e;
-}
-#btn-break  { background: #e8632a; color: #fff3e0; }
-#btn-ignore { background: #f2e9db; color: #17130e; }
-#btn-shutdown { background: #17130e; color: #f2e9db; }
-
-#countdown {
-  margin: 14px 0 10px;
-  padding: 12px 14px;
-  border: 2.5px dashed #b3541e;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: 15px;
-  color: #b3541e;
-  text-align: center;
-}
-
-.bubble-hint { font-size: 11px; color: #b3541e; margin-bottom: 6px; }
-
-.bubble-footer { font-size: 11px; color: #8d7f68; }
+.bubble-footer { font-size: 11px; color: #8d7f68; margin-top: 4px; }

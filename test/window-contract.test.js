@@ -121,69 +121,84 @@ function cleanup() {
     );
   }
 
-  // --- intervention: the mascot overlay keeps its exact window contract -------
+  // --- intervention: two layers, each with its exact window contract ----------
+  // The last two windows are always [mascot, control card] of the newest
+  // intervention, so later cycles do not depend on a running index.
+  const layers = () => electronState.windows.slice(-2);
+
   main._test.setFrontmostMatch(true);
   reminder.elapseNow();
-  assert.strictEqual(electronState.windows.length, 2, 'one intervention shows one overlay');
-  const win = electronState.windows[1];
-  assert.strictEqual(win.opts.transparent, true, 'overlay is transparent');
-  assert.strictEqual(win.opts.frame, false, 'overlay is frameless');
-  assert.strictEqual(win.opts.alwaysOnTop, true, 'overlay is always-on-top');
+  assert.strictEqual(electronState.windows.length, 3, 'one intervention shows the mascot layer and the control card');
+  const [mascot, card] = layers();
+
+  for (const [win, what] of [[mascot, 'mascot layer'], [card, 'control card']]) {
+    assert.strictEqual(win.opts.transparent, true, `${what} is transparent`);
+    assert.strictEqual(win.opts.frame, false, `${what} is frameless`);
+    assert.strictEqual(win.opts.alwaysOnTop, true, `${what} is always-on-top`);
+    assert.deepStrictEqual(win.calls.setAlwaysOnTop, [[true, 'screen-saver']], `${what}: screen-saver level`);
+    // Neither layer may activate: a keystroke aimed at the terminal must keep
+    // landing in the terminal.
+    assert.strictEqual(win.opts.focusable, false, `${what} is non-focusable`);
+    assert.strictEqual(win.opts.show, false, `${what} does not auto-show (and therefore does not activate)`);
+    assert.strictEqual(win.calls.showInactive, 1, `${what} is shown without taking focus`);
+    assert.strictEqual(win.calls.focus, 0, `${what} never grabs focus`);
+  }
+
   assert.deepStrictEqual(
-    { width: win.opts.width, height: win.opts.height, x: win.opts.x, y: win.opts.y },
+    { width: mascot.opts.width, height: mascot.opts.height, x: mascot.opts.x, y: mascot.opts.y },
     { width: 1440, height: 900, x: 0, y: 0 },
-    'overlay covers the primary display'
+    'the mascot layer covers the primary display'
   );
-  assert.deepStrictEqual(win.calls.setAlwaysOnTop, [[true, 'screen-saver']], 'screen-saver level');
-  const [overlayFile, overlayOpts] = win.calls.loadFile[0];
-  assert.ok(overlayFile.endsWith(path.join('overlay', 'overlay.html')), 'overlay is a local file');
+  const [overlayFile, overlayOpts] = mascot.calls.loadFile[0];
+  assert.ok(overlayFile.endsWith(path.join('overlay', 'overlay.html')), 'the mascot layer is a local file');
   assert.strictEqual(overlayOpts.query.interval, '30', 'the scene carries the chosen interval');
 
-  // --- the display-sized overlay does not swallow the display's input ----------
+  // --- the display-sized layer never claims a click; the card always does ------
   assert.deepStrictEqual(
-    win.calls.setIgnoreMouseEvents[0],
-    [true, { forward: true }],
-    'the overlay starts click-through: empty pixels never eat a click'
+    mascot.calls.setIgnoreMouseEvents,
+    [[true]],
+    'the mascot layer is click-through outright — no forward-only trick, so Linux behaves like the rest'
   );
-  const hover = (on) => electronState.ipcHandlers['clowk-interactive'](null, on);
-  hover(true);
   assert.deepStrictEqual(
-    win.calls.setIgnoreMouseEvents[1],
-    [false],
-    'hit-testing turns on while the pointer is over the message box'
+    card.calls.setIgnoreMouseEvents,
+    [],
+    'the control card keeps normal hit-testing: its buttons are reachable on every platform'
   );
-  hover(false);
-  assert.deepStrictEqual(
-    win.calls.setIgnoreMouseEvents[2],
-    [true, { forward: true }],
-    'and back off when the pointer leaves it'
+  const [controlFile, controlOpts] = card.calls.loadFile[0];
+  assert.ok(controlFile.endsWith(path.join('overlay', 'control.html')), 'the control card is a local file');
+  assert.strictEqual(controlOpts.query.interval, '30', 'the card carries the chosen interval');
+  assert.ok(card.opts.width < 1440 && card.opts.height < 900, 'the control card is compact, not display-sized');
+  assert.ok(
+    card.opts.x >= 0 && card.opts.y >= 0 && card.opts.x + card.opts.width <= 1440,
+    'the control card sits inside the primary display'
   );
 
   const action = (reason) => electronState.ipcHandlers['clowk-action'](null, reason);
 
   // --- Ignore: dismiss, interval restarts --------------------------------------
   action('ignore');
-  assert.ok(win.closed, 'ignore closes the overlay');
+  assert.ok(mascot.closed && card.closed, 'ignore closes both layers together');
   assert.strictEqual(reminder.state, 'armed', 'ignore restarts the interval');
 
-  // --- external close (Cmd+W): tracking must recover ---------------------------
+  // --- external close (Cmd+W) of either layer: tracking must recover ------------
   reminder.elapseNow();
-  const win2 = electronState.windows[2];
-  win2.close(); // no action — the OS-level close path
+  const [mascot2, card2] = layers();
+  card2.close(); // no action — the OS-level close path, on the card this time
+  assert.ok(mascot2.closed, 'closing one layer takes the other with it');
   assert.strictEqual(reminder.state, 'armed', 'external close re-arms (inherited bug fixed)');
 
   // --- Take a break (countdown completed in the renderer): dismiss + re-arm ----
   reminder.elapseNow();
-  const win3 = electronState.windows[3];
+  const [mascot3, card3] = layers();
   action('break');
-  assert.ok(win3.closed, 'break closes the overlay after the countdown');
+  assert.ok(mascot3.closed && card3.closed, 'break closes both layers after the countdown');
   assert.strictEqual(reminder.state, 'armed', 'break restarts the original interval');
 
   // --- Shut down: quits Open Clowk only ----------------------------------------
   reminder.elapseNow();
-  const win4 = electronState.windows[4];
+  const [mascot4, card4] = layers();
   action('shutdown');
-  assert.ok(win4.closed, 'shutdown closes the overlay');
+  assert.ok(mascot4.closed && card4.closed, 'shutdown closes both layers');
   assert.strictEqual(reminder.state, 'stopped', 'shutdown stops the reminder');
   assert.strictEqual(electronState.quitCalls, 1, 'shutdown quits the app exactly once');
   // nothing else is touched: no exec/kill of any terminal, IDE, or agent —
@@ -212,6 +227,35 @@ function cleanup() {
   front.current = 'Terminal';
   await main._test.pollFrontmost();
   assert.strictEqual(main._test.getCompatMessage(), null, 'a probe that recovers clears the message');
+  assert.deepStrictEqual(
+    reopened.webContents.sent.slice(-1),
+    [['setup:compat', null]],
+    'the open window is told the capability came back, so a stale warning does not linger'
+  );
+
+  // --- an ALREADY-OPEN setup window is told directly, not just focused ---------
+  // showSetup() only focuses an existing window and setup.js reads the message
+  // once per load, so window creation cannot be what carries it.
+  {
+    const windowsBefore = electronState.windows.length;
+    const sentBefore = reopened.webContents.sent.length;
+    front.current = null;
+    for (let i = 0; i < 3; i++) await main._test.pollFrontmost();
+    assert.strictEqual(
+      electronState.windows.length,
+      windowsBefore,
+      'no second setup window is opened on top of the one already showing'
+    );
+    assert.deepStrictEqual(
+      reopened.webContents.sent.slice(sentBefore),
+      [['setup:compat', main._test.getCompatMessage()]],
+      'the message is pushed into the window the user is already looking at'
+    );
+    assert.strictEqual(reopened.calls.focus > 0, true, 'and that window is brought forward');
+
+    front.current = 'Terminal';
+    await main._test.pollFrontmost();
+  }
 
   // --- Quit from setup: the way out when no intervention ever arrives -----------
   await electronState.ipcInvokeHandlers['setup:quit'](null);

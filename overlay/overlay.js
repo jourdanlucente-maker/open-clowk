@@ -1,20 +1,23 @@
-/* OPEN CLOWK overlay scene: the robot walks in and opens every clock.
+/* OPEN CLOWK mascot layer: the robot walks in and opens every clock.
  *
  * Visuals come from the official Higgsfield-rendered sprites (same robot and
  * pocket watch as the Open Clowk posters). Load order per sprite:
  *   1. local file in ../assets/   2. CDN   3. built-in CSS art fallback
  *
- * The overlay runs only inside the Electron mascot window — there is no
- * browser mode. Actions: Take a break (visible 5-minute countdown, then the
- * interval restarts), Ignore (dismiss, interval restarts), Shut down (quits
- * Open Clowk only).
+ * This layer is decoration only. Its window is display-sized, so it is created
+ * non-focusable with hit-testing off: it never takes a click or a keystroke
+ * from the terminal underneath, and it sends no intents. The three actions
+ * live in the separate control card (overlay/control.js), which is hit-tested
+ * normally and is reachable from the first frame — the animation is never in
+ * the way of dismissing the intervention.
+ *
+ * There is no browser mode.
  */
 
 'use strict';
 
 const params = new URLSearchParams(location.search);
 const INTERVAL = params.get('interval') || '30';
-const BREAK_SECONDS = 300;
 
 document.getElementById('bubble-line1').textContent =
   `You've been coding for ${INTERVAL} minutes straight.`;
@@ -204,76 +207,5 @@ async function scene() {
   robot.classList.remove('walking');
   document.getElementById('bubble').hidden = false;
 }
-
-function act(reason) {
-  if (window.clowk) window.clowk.action(reason);
-}
-
-/* ---------- hit-testing: the window is display-sized, the mascot is not ----------
- * The main process keeps the overlay click-through and only hit-tests while the
- * pointer is over the message box, so the empty pixels never swallow a click. */
-let interactive = false;
-
-function setInteractive(next) {
-  if (next === interactive) return;
-  interactive = next;
-  if (window.clowk && window.clowk.setInteractive) window.clowk.setInteractive(next);
-}
-
-function overBubble(x, y) {
-  const bubble = document.getElementById('bubble');
-  if (!bubble || bubble.hidden) return false;
-  const r = bubble.getBoundingClientRect();
-  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-}
-
-document.addEventListener('mousemove', (e) => setInteractive(overBubble(e.clientX, e.clientY)));
-
-/* ---------- actions ---------- */
-let breaking = false;
-let breakTick = null;
-
-/* Escape is the escape hatch, available for the whole intervention: during the
- * ~12s walk-in the buttons do not exist yet, and during the five-minute break
- * they are hidden. It resolves the action already in progress — no fourth
- * intent reaches the main process. */
-function dismiss() {
-  if (breakTick) {
-    clearInterval(breakTick);
-    breakTick = null;
-  }
-  act(breaking ? 'break' : 'ignore');
-}
-
-function startBreak() {
-  breaking = true;
-  document.querySelector('.bubble-buttons').hidden = true;
-  const el = document.getElementById('countdown');
-  el.hidden = false;
-  let left = BREAK_SECONDS;
-  const render = () => {
-    const m = Math.floor(left / 60);
-    const s = String(left % 60).padStart(2, '0');
-    el.textContent = `Break — the clocks stay open. Back in ${m}:${s} · Esc ends it now`;
-  };
-  render();
-  breakTick = setInterval(() => {
-    left -= 1;
-    if (left <= 0) {
-      clearInterval(breakTick);
-      breakTick = null;
-      act('break');
-      return;
-    }
-    render();
-  }, 1000);
-}
-
-document.getElementById('btn-break').addEventListener('click', startBreak);
-document.getElementById('btn-ignore').addEventListener('click', () => act('ignore'));
-document.getElementById('btn-shutdown').addEventListener('click', () => act('shutdown'));
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') dismiss();
-});
 
 scene();

@@ -18,9 +18,14 @@ const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 
-const tracked = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' })
-  .split('\n')
-  .filter(Boolean)
+// Committed files AND new not-yet-committed ones (respecting .gitignore): a
+// privacy guard that only sees `git ls-files` gives a free pass to every file
+// added since the last commit, which is exactly when it matters most.
+const listFiles = (args) =>
+  execSync(`git ls-files ${args}`, { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
+
+const tracked = [...new Set([...listFiles(''), ...listFiles('--others --exclude-standard')])]
+  .filter((f) => fs.existsSync(path.join(ROOT, f)))
   .filter(
     (f) =>
       !f.startsWith('test/') && // the test harness itself mentions patterns as strings
@@ -33,6 +38,8 @@ const tracked = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' })
 
 assert.ok(tracked.includes('electron/main.js'), 'scan sees the product sources');
 assert.ok(tracked.includes('electron/adapters.js'), 'scan sees the adapters');
+assert.ok(tracked.includes('overlay/overlay.js'), 'scan sees the mascot layer');
+assert.ok(tracked.includes('overlay/control.js'), 'scan sees the control card');
 
 const sources = {};
 for (const f of tracked) {
@@ -89,10 +96,38 @@ assert.ok(
 );
 
 // --- the three intervention actions are the only overlay intents --------------
-const overlayJs = sources['overlay/overlay.js'];
+const controlJs = sources['overlay/control.js'];
 for (const reason of ['break', 'ignore', 'shutdown']) {
-  assert.ok(overlayJs.includes(`'${reason}'`), `overlay sends the '${reason}' intent`);
+  assert.ok(controlJs.includes(`'${reason}'`), `the control card sends the '${reason}' intent`);
 }
-assert.ok(!overlayJs.includes("'snooze'"), 'no snooze intent survives');
+assert.ok(!controlJs.includes("'snooze'"), 'no snooze intent survives');
+
+// --- the display-sized mascot layer is decoration, never a control surface -----
+const overlayJs = sources['overlay/overlay.js'];
+assert.ok(!/window\.clowk/.test(overlayJs), 'the mascot layer holds no bridge to the main process');
+assert.ok(!/addEventListener/.test(overlayJs), 'the mascot layer listens for no input at all');
+assert.ok(
+  !/btn-break|btn-ignore|btn-shutdown|btn-resume/.test(sources['overlay/overlay.html']),
+  'the actions live on the control card, not on the click-through layer'
+);
+
+// --- the mascot layer never claims input; the card is never made click-through --
+const mainJs = sources['electron/main.js'];
+assert.ok(
+  /overlayWindow\.setIgnoreMouseEvents\(true\)/.test(mainJs),
+  'the display-sized layer is click-through outright — no forward-only trick'
+);
+assert.ok(
+  !/forward:\s*true/.test(mainJs),
+  'no reliance on pointer forwarding, which Electron supports on macOS/Windows only'
+);
+assert.ok(
+  !/controlWindow\.setIgnoreMouseEvents/.test(mainJs),
+  'the control card keeps normal hit-testing on every platform'
+);
+assert.ok(
+  (mainJs.match(/focusable:\s*false/g) || []).length >= 1 && /showInactive\(\)/.test(mainJs),
+  'intervention windows are non-focusable and shown inactive — no keystroke theft'
+);
 
 console.log(`no-browser / privacy static guards: all tests passed (${tracked.length} files scanned)`);

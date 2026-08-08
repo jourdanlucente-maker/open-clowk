@@ -1,10 +1,17 @@
-/* Acceptance: the overlay scene completes end to end at DOM level —
- * robot walks in, all clocks open, gears spill, the message box appears —
- * and the three exact actions behave: Take a break shows a visible 5:00
- * countdown and only then dismisses; Ignore dismisses; Shut down sends the
- * shutdown intent. The offline CSS-art path is proven with no local assets
- * and no network. Everything runs headlessly in a vm sandbox with a minimal
- * faithful DOM — there is no browser mode to test.
+/* Acceptance for both halves of an intervention, at DOM level.
+ *
+ * Mascot layer (overlay.js): the scene completes end to end — robot walks in,
+ * all clocks open, gears spill, the message box appears — and it stays pure
+ * decoration: no bridge, no listeners, no intents.
+ *
+ * Control card (control.js): the three exact actions behave. Take a break
+ * shows a visible 5:00 countdown and only then dismisses; Resume now ends it
+ * early without inventing a fourth intent; Ignore dismisses; Shut down sends
+ * the shutdown intent. The controls never depend on the animation.
+ *
+ * The offline CSS-art path is proven with no local assets and no network.
+ * Everything runs headlessly in a vm sandbox with a minimal faithful DOM —
+ * there is no browser mode to test.
  *
  * Run: node test/overlay-dom.test.js
  */
@@ -16,8 +23,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const OVERLAY_JS = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'overlay.js'), 'utf8');
-const OVERLAY_HTML = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'overlay.html'), 'utf8');
+const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+const OVERLAY_JS = read('overlay', 'overlay.js');
+const OVERLAY_HTML = read('overlay', 'overlay.html');
+const CONTROL_JS = read('overlay', 'control.js');
+const CONTROL_HTML = read('overlay', 'control.html');
 
 /* ---------- minimal faithful DOM ---------- */
 
@@ -124,44 +134,81 @@ function buildDocument() {
     },
   };
   document.body = new FakeElement('body', document);
+  for (const id of ['stage', 'robot', 'sprite', 'robot-img', 'bubble', 'bubble-line1']) {
+    const el = new FakeElement('div', document);
+    el.id = id;
+  }
+  document.byId.robot.className = 'walking';
+  document.byId.bubble.hidden = true;
+  return document;
+}
+
+function buildControlDocument() {
+  const document = {
+    byId: {},
+    createElement: (tag) => new FakeElement(tag, document),
+    getElementById(id) {
+      return this.byId[id] || null;
+    },
+  };
+  document.body = new FakeElement('body', document);
   for (const id of [
-    'stage',
-    'robot',
-    'sprite',
-    'robot-img',
-    'bubble',
-    'bubble-line1',
+    'card',
+    'card-line',
     'countdown',
+    'actions',
+    'break-actions',
     'btn-break',
     'btn-ignore',
     'btn-shutdown',
+    'btn-resume',
   ]) {
     const el = new FakeElement('div', document);
     el.id = id;
   }
-  const buttons = new FakeElement('div', document);
-  buttons.className = 'bubble-buttons';
-  document.body.appendChild(buttons);
-  document.byId.robot.className = 'walking';
-  document.byId.bubble.hidden = true;
   document.byId.countdown.hidden = true;
-
-  document.listeners = {};
-  document.addEventListener = function (event, cb) {
-    (this.listeners[event] = this.listeners[event] || []).push(cb);
-  };
-  document.dispatch = function (event, payload) {
-    (this.listeners[event] || []).forEach((cb) => cb(payload));
-  };
+  document.byId['break-actions'].hidden = true;
   return document;
 }
 
 /* ---------- run the real overlay.js in a sandbox ---------- */
 
+function runControl() {
+  const document = buildControlDocument();
+  const actions = [];
+  const sandbox = {
+    document,
+    location: { search: '?interval=30' },
+    URLSearchParams,
+    window: { clowk: { action: (reason) => actions.push(reason) } },
+    setInterval: (fn) => {
+      const handle = { cleared: false, id: null };
+      const loop = () => {
+        if (handle.cleared) return;
+        fn();
+        handle.id = setTimeout(loop, 0);
+      };
+      handle.id = setTimeout(loop, 0);
+      return handle;
+    },
+    clearInterval: (h) => {
+      if (h) {
+        h.cleared = true;
+        clearTimeout(h.id);
+      }
+    },
+    Math,
+    String,
+    console,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(CONTROL_JS, sandbox, { filename: 'control.js' });
+  return { document, actions };
+}
+
 function runOverlay({ online }) {
   const document = buildDocument();
   const actions = [];
-  const hints = [];
 
   class FakeImage {
     set src(value) {
@@ -186,12 +233,7 @@ function runOverlay({ online }) {
     Image: FakeImage,
     innerWidth: 1440,
     innerHeight: 900,
-    window: {
-      clowk: {
-        action: (reason) => actions.push(reason),
-        setInteractive: (on) => hints.push(on),
-      },
-    },
+    window: { clowk: { action: (reason) => actions.push(reason) } },
     // Immediate timers: dramatic pauses and countdown seconds collapse to
     // macrotask turns; ordering is preserved, wall time is not.
     setTimeout: (fn) => setTimeout(fn, 0),
@@ -220,7 +262,7 @@ function runOverlay({ online }) {
   vm.createContext(sandbox);
   vm.runInContext(OVERLAY_JS, sandbox, { filename: 'overlay.js' });
 
-  return { document, actions, hints };
+  return { document, actions };
 }
 
 async function untilSceneDone(document) {
@@ -241,14 +283,19 @@ async function untilActions(actions, n) {
 (async () => {
   // --- static: exactly the three approved actions, no browser mode ------------
   assert.ok(OVERLAY_HTML.includes('id="bubble"'), 'the attached message box exists');
-  assert.ok(OVERLAY_HTML.includes('Take a break'), 'Take a break action present');
-  assert.ok(OVERLAY_HTML.includes('Ignore'), 'Ignore action present');
-  assert.ok(OVERLAY_HTML.includes('Shut down'), 'Shut down action present');
-  assert.ok(OVERLAY_HTML.includes('id="countdown"'), 'break countdown element exists');
-  assert.ok(!OVERLAY_HTML.includes('btn-snooze'), 'the old snooze action is gone');
+  assert.ok(CONTROL_HTML.includes('Take a break'), 'Take a break action present');
+  assert.ok(CONTROL_HTML.includes('Ignore'), 'Ignore action present');
+  assert.ok(CONTROL_HTML.includes('Shut down'), 'Shut down action present');
+  assert.ok(CONTROL_HTML.includes('Resume now'), 'the break has a pointer-reachable way out');
+  assert.ok(CONTROL_HTML.includes('id="countdown"'), 'break countdown element exists');
+  assert.ok(!CONTROL_HTML.includes('btn-snooze'), 'the old snooze action is gone');
   assert.ok(!OVERLAY_JS.includes('demo-bg') && !OVERLAY_JS.includes("params.get('bg')"), 'no browser preview mode remains');
 
-  // --- offline CSS-art scene + Take a break countdown --------------------------
+  // The controls must not ride on the display-sized click-through layer.
+  assert.ok(!OVERLAY_HTML.includes('btn-break'), 'the mascot layer carries no buttons');
+  assert.ok(!OVERLAY_JS.includes('window.clowk'), 'the mascot layer has no bridge to the main process');
+
+  // --- offline CSS-art scene (the mascot layer, decoration only) ---------------
   {
     const { document, actions } = runOverlay({ online: false });
     await untilSceneDone(document);
@@ -269,63 +316,51 @@ async function untilActions(actions, n) {
       );
     }
     assert.ok(document.byId['bubble-line1'].textContent.includes('30 minutes'), 'message carries the interval');
+    assert.deepStrictEqual(actions, [], 'the mascot layer sends no intent of its own');
+  }
 
-    // Take a break: countdown becomes visible at 5:00, and ONLY after it
-    // completes does the break action dismiss the overlay.
+  // --- the control card is usable immediately, without the animation ------------
+  {
+    const { document, actions } = runControl();
+    assert.ok(document.byId['card-line'].textContent.includes('30 minutes'), 'the card carries the interval');
+    assert.strictEqual(document.byId.actions.hidden, false, 'the three actions are there from the first frame');
+    assert.deepStrictEqual(actions, [], 'nothing is sent until the user acts');
+  }
+
+  // --- Take a break: visible 5:00 countdown, dismissing only when it ends -------
+  {
+    const { document, actions } = runControl();
     document.byId['btn-break'].click();
     const countdown = document.byId.countdown;
     assert.strictEqual(countdown.hidden, false, 'the five-minute countdown is visible');
     assert.ok(countdown.textContent.includes('5:00'), 'countdown starts at 5:00');
+    assert.strictEqual(document.byId.actions.hidden, true, 'the three actions step aside during the break');
+    assert.strictEqual(
+      document.byId['break-actions'].hidden,
+      false,
+      'Resume now is visible for the whole break — the way out never depends on focus'
+    );
     assert.strictEqual(actions.length, 0, 'break does not dismiss before the countdown ends');
     await untilActions(actions, 1);
     assert.deepStrictEqual(actions, ['break'], 'break action fires when the countdown completes');
   }
 
+  // --- Resume now ends a running break early, as the same break intent ---------
+  {
+    const { document, actions } = runControl();
+    document.byId['btn-break'].click();
+    document.byId['btn-resume'].click();
+    assert.deepStrictEqual(actions, ['break'], 'Resume now resolves the break — no fourth intent');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(actions, ['break'], 'the cancelled countdown never fires again');
+  }
+
   // --- Ignore and Shut down send their exact intents ---------------------------
   {
-    const { document, actions } = runOverlay({ online: false });
-    await untilSceneDone(document);
+    const { document, actions } = runControl();
     document.byId['btn-ignore'].click();
     document.byId['btn-shutdown'].click();
     assert.deepStrictEqual(actions, ['ignore', 'shutdown'], 'ignore and shutdown reach the bridge exactly');
-  }
-
-  // --- hit-testing is hinted only over the message box --------------------------
-  {
-    const { document, hints } = runOverlay({ online: false });
-    // Mid-scene the message box is still hidden: nothing may claim the pointer.
-    document.dispatch('mousemove', { clientX: 150, clientY: 150 });
-    assert.deepStrictEqual(hints, [], 'while the bubble is hidden the overlay stays click-through');
-
-    await untilSceneDone(document);
-    document.dispatch('mousemove', { clientX: 150, clientY: 150 });
-    assert.deepStrictEqual(hints, [true], 'pointer over the message box asks for hit-testing');
-    document.dispatch('mousemove', { clientX: 150, clientY: 150 });
-    assert.deepStrictEqual(hints, [true], 'the hint is not re-sent while the pointer stays put');
-    document.dispatch('mousemove', { clientX: 900, clientY: 700 });
-    assert.deepStrictEqual(hints, [true, false], 'leaving it hands the clicks back to the app underneath');
-  }
-
-  // --- Escape is available for the whole intervention ---------------------------
-  {
-    // During the walk-in the buttons do not exist yet.
-    const { document, actions } = runOverlay({ online: false });
-    await untilSceneDone(document);
-    document.dispatch('keydown', { key: 'a' });
-    assert.deepStrictEqual(actions, [], 'ordinary keys do nothing');
-    document.dispatch('keydown', { key: 'Escape' });
-    assert.deepStrictEqual(actions, ['ignore'], 'Escape dismisses and restarts the interval');
-  }
-  {
-    // During the five-minute countdown every button is hidden.
-    const { document, actions } = runOverlay({ online: false });
-    await untilSceneDone(document);
-    document.byId['btn-break'].click();
-    assert.strictEqual(document.byId.countdown.hidden, false, 'the countdown is running');
-    document.dispatch('keydown', { key: 'Escape' });
-    assert.deepStrictEqual(actions, ['break'], 'Escape ends the break early — no fourth intent');
-    await new Promise((r) => setTimeout(r, 30));
-    assert.deepStrictEqual(actions, ['break'], 'the cancelled countdown never fires again');
   }
 
   // --- sprite path: CDN art loads when reachable --------------------------------
@@ -337,7 +372,9 @@ async function untilActions(actions, n) {
     assert.strictEqual(document.byId.stage.children.length, 4, 'four clocks staged with sprites');
   }
 
-  console.log('overlay DOM: all tests passed (scene, countdown, three actions, offline CSS-art)');
+  console.log(
+    'overlay DOM: all tests passed (mascot scene, control card, countdown, Resume now, three actions, offline CSS-art)'
+  );
   process.exit(0);
 })().catch((err) => {
   console.error(err);

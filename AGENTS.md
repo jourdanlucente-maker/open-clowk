@@ -30,11 +30,19 @@ fallback/preview is a build failure — `test/no-browser-static.test.js` and
   session; Shut down quits only Open Clowk.
 - No login persistence, no global install; prefs live in
   `~/.open-clowk/prefs.json`.
+- An intervention is **two windows** and must stay that way: a display-sized
+  mascot layer (`overlay/overlay.*`) that is non-focusable, shown inactive and
+  `setIgnoreMouseEvents(true)` — decoration with no bridge and no listeners —
+  plus a compact hit-tested control card (`overlay/control.*`) holding the
+  three actions and the break's **Resume now**. Never move controls onto the
+  display-sized layer, and never rely on `setIgnoreMouseEvents` forwarding
+  (macOS/Windows only) or on keyboard focus to reach them.
 - Accepted first-cut limits, pinned by tests — do not "fix" without an owner
-  decision: the overlay covers the **primary display only**
+  decision: both layers cover the **primary display only**
   (`test/window-contract.test.js`), and there is no tray; the setup window
   (reopened by a second start, dock/taskbar activate, or a lost frontmost
-  capability) is the only post-Launch surface.
+  capability, which is pushed to an already-open window) is the only
+  post-Launch surface.
 - Sprite policy is owned by `assets/README.md` (private local download OK —
   gitignored; no commit/convert/package/publish/redistribute; no PR #1
   WebP). Point to it; do not restate it.
