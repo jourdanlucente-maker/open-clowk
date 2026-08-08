@@ -53,7 +53,6 @@ fallback/preview is a build failure — `test/no-browser-static.test.js` and
   touch obsolete PR #1 or the archive refs (pinned in `MIGRATION.md`), and
   never mutate the read-only source repo `JEAN-MICHEL-REPOS`.
 
-
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

@@ -44,8 +44,22 @@ Every change after the import commit is a separate, reviewable commit:
   **supersedes** the idle-time-only contract: the idle tracker, its config,
   its tests, and the `--demo` mode were removed.
 - `836fa11` — deterministic acceptance suite for the timed MVP.
-- Documentation updated (README, SECURITY, assets policy) and project
-  `AGENTS.md` added.
+- `0ae7a4e` — documentation rewritten for the timed MVP (README, `SECURITY.md`,
+  `assets/README.md` as the single sprite policy) and project `AGENTS.md`
+  (+ `CLAUDE.md` symlink) added.
+- `08a9b06` — `package-lock.json` committed so a clean clone installs the same
+  Electron dev dependency tree.
+- `5a6761f` — review hardening: overlay input, frontmost-probe failures
+  surfaced as a compatibility message instead of running mute, enforced
+  interval bounds (1–1440 minutes), and non-overlapping polling.
+- `b9ce029` — the intervention became **two** windows: a click-through,
+  non-focusable mascot layer (`overlay/overlay.*`) plus a hit-tested control
+  card (`overlay/control.*`) that carries the three actions and **Resume now**.
+- `a44e0a9` — review fixes: `hidden`-attribute override, control-card
+  clipping, and speech-bubble overlap.
+- `544c6bb` — mascot poses derived from the control card's geometry (passed in
+  from the main process) and the entrance moved to the left, so no pose plays
+  out behind the card.
 
 ### Superseded idle-time line (archived, not part of this branch)
 
