@@ -1,92 +1,106 @@
 /**
- * OPEN CLOWK — desktop mascot.
+ * OPEN CLOWK — timed terminal mascot.
  *
- * Sits quietly while you work. It counts only your REAL activity — system-wide
- * keyboard/mouse input, whatever app you're in (Claude Code, VS Code, a
- * terminal, a browser, all of it). After `activeMinutes` of accumulated
- * activity without a proper break, the robot appears and opens every clock
- * on your screen. Walk away for `idleResetMinutes` and the counter forgives
- * you all by itself.
+ * A native setup window lets you pick a reminder interval and one or more
+ * supported terminal/IDE/agent targets. Launch arms a local timer: at each
+ * interval the transparent always-on-top robot appears — but only while a
+ * selected target is frontmost (Codex/Claude additionally require their
+ * executable to be running). Every intervention offers exactly three
+ * actions: Take a break (5-minute countdown, then the interval restarts),
+ * Ignore (dismiss, interval restarts), Shut down (quits Open Clowk only).
+ *
+ * Privacy boundary: the app reads the frontmost application's NAME and, for
+ * Codex/Claude, executable NAMES. Nothing else. No arguments, no command
+ * lines, no prompts, no terminal contents, no window titles, no keystrokes,
+ * no files, no screen pixels, no audio, no network contents. No telemetry.
  */
 
 'use strict';
 
-const { app, BrowserWindow, ipcMain, screen, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createTracker } = require('./activity');
+const adapters = require('./adapters');
+const { createReminder } = require('./reminder');
+const { validatePrefs, detectTargets, matchFrontmost } = require('./targets');
 
-const DEFAULTS = {
-  activeMinutes: 90, // accumulated activity before the robot intervenes
-  idleResetMinutes: 5, // walk away this long and the counter self-resets
-  snoozeMinutes: 10,
-  sceneSeconds: 30, // overlay auto-dismisses after this long if ignored
-  launchAtLogin: false,
-};
+const DEFAULT_MINUTES = 30;
+const PREFS_DIR = path.join(os.homedir(), '.open-clowk');
+const PREFS_FILE = path.join(PREFS_DIR, 'prefs.json');
 
-const TICK_SECONDS = 15;
-
-function loadConfig() {
-  const candidates = [
-    path.join(os.homedir(), '.open-clowk', 'config.json'),
-    path.join(__dirname, '..', 'clowk.config.json'),
-  ];
-  for (const file of candidates) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-      // back-compat: old configs used intervalMinutes
-      if (raw.intervalMinutes && !raw.activeMinutes) raw.activeMinutes = raw.intervalMinutes;
-      return { ...DEFAULTS, ...raw, configFile: file };
-    } catch (e) {
-      // try next
-    }
-  }
-  return { ...DEFAULTS, configFile: null };
-}
-
-const config = loadConfig();
-const demoMode = process.argv.includes('--demo');
-
-const tracker = createTracker({
-  targetSeconds: config.activeMinutes * 60,
-  idleResetSeconds: config.idleResetMinutes * 60,
-  tickSeconds: TICK_SECONDS,
-});
-
+let adapter = null; // created lazily so tests can inject fixtures
+let reminder = null;
+let setupWindow = null;
 let overlayWindow = null;
-let lastLoggedMinutes = -1;
+let launched = false;
+let prefs = { minutes: DEFAULT_MINUTES, targets: [] };
 
-function minutesActive() {
-  return Math.floor(tracker.activeSeconds / 60);
+function getAdapter() {
+  if (!adapter) adapter = adapters.createAdapter();
+  return adapter;
 }
 
-function onTick() {
-  const idle = powerMonitor.getSystemIdleTime();
-  const event = tracker.tick(idle);
+function loadPrefs() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8'));
+    const result = validatePrefs(raw);
+    if (result.ok) return result.prefs;
+  } catch (e) {
+    // no saved prefs yet — defaults apply
+  }
+  return { minutes: DEFAULT_MINUTES, targets: [] };
+}
 
-  if (event === 'fire') {
-    console.log(`[open-clowk] ${config.activeMinutes} minutes of real activity. Dispatching the robot.`);
-    showOverlay();
-    return;
+function savePrefs(p) {
+  try {
+    fs.mkdirSync(PREFS_DIR, { recursive: true });
+    fs.writeFileSync(PREFS_FILE, JSON.stringify(p, null, 2));
+  } catch (e) {
+    // prefs are a convenience; the reminder still runs
   }
-  if (event === 'reset') {
-    console.log('[open-clowk] real break detected. Counter forgiven. Respect.');
-    lastLoggedMinutes = -1;
-    return;
+}
+
+async function detect() {
+  const a = getAdapter();
+  if (!a.supported) return { supported: false, message: a.message };
+  const running = {};
+  for (const name of ['codex', 'claude']) {
+    running[name] = await a.execRunning(name);
   }
-  // gentle heartbeat every 15 minutes of accumulated activity
-  const m = minutesActive();
-  if (event === 'active' && m > 0 && m % 15 === 0 && m !== lastLoggedMinutes) {
-    lastLoggedMinutes = m;
-    console.log(`[open-clowk] ${m}/${config.activeMinutes} active minutes. Tic tac.`);
-  }
+  const targets = detectTargets({
+    platform: a.platform,
+    probes: {
+      appInstalled: (bundle) => a.appInstalled(bundle),
+      exeRunning: (name) => !!running[name],
+    },
+  });
+  return { supported: true, targets };
+}
+
+/* ---------- windows ---------- */
+
+function showSetup() {
+  setupWindow = new BrowserWindow({
+    width: 520,
+    height: 660,
+    resizable: false,
+    autoHideMenuBar: true,
+    title: 'Open Clowk',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+    },
+  });
+  setupWindow.loadFile(path.join(__dirname, 'setup.html'));
+  setupWindow.on('closed', () => {
+    setupWindow = null;
+  });
 }
 
 function showOverlay() {
   if (overlayWindow) return;
-  tracker.pause();
 
   const { width, height } = screen.getPrimaryDisplay().bounds;
   overlayWindow = new BrowserWindow({
@@ -110,61 +124,125 @@ function showOverlay() {
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), {
-    query: { interval: String(config.activeMinutes) },
+    query: { interval: String(prefs.minutes) },
   });
 
-  // If the human ignores the robot entirely, stand down and forgive.
-  const autoDismiss = setTimeout(() => dismissOverlay('ignored'), config.sceneSeconds * 1000);
   overlayWindow.on('closed', () => {
-    clearTimeout(autoDismiss);
     overlayWindow = null;
+    // External close (Cmd+W / Alt+F4): never leave tracking paused —
+    // the interval re-arms exactly like a dismissal.
+    if (reminder) reminder.resolve('closed');
   });
 }
 
-function dismissOverlay(reason) {
-  if (overlayWindow) {
-    overlayWindow.close();
-    overlayWindow = null;
+function handleOverlayAction(reason) {
+  if (!reminder) return;
+  if (reason === 'shutdown') {
+    // Quit Open Clowk only. Never touch the selected terminal/IDE/agent.
+    reminder.resolve('shutdown');
+    if (overlayWindow) overlayWindow.close();
+    app.quit();
+    return;
   }
-  tracker.resume();
-
-  if (reason === 'break') {
-    tracker.activeSeconds = 0;
-    console.log('[open-clowk] break acknowledged. Clocks will regenerate. Respect.');
-  } else if (reason === 'snooze') {
-    tracker.activeSeconds = Math.max(0, (config.activeMinutes - config.snoozeMinutes) * 60);
-    console.log(`[open-clowk] snoozed. ~${config.snoozeMinutes} active minute(s) until the robot returns.`);
-  } else {
-    tracker.activeSeconds = 0;
-    console.log('[open-clowk] ignored. Bold. Counter reset anyway.');
-  }
-  lastLoggedMinutes = -1;
+  // 'break' (countdown finished) and 'ignore' both dismiss + re-arm.
+  reminder.resolve(reason === 'break' ? 'break' : 'ignore');
+  if (overlayWindow) overlayWindow.close();
 }
 
-ipcMain.on('clowk-dismiss', (_event, reason) => dismissOverlay(reason));
+/* ---------- launch ---------- */
 
-app.whenReady().then(() => {
-  console.log('[open-clowk] the anti-wellness wellness mascot is watching (your idle time, nothing else).');
-  if (config.configFile) console.log(`[open-clowk] config: ${config.configFile}`);
-  console.log(
-    `[open-clowk] robot after ${config.activeMinutes} active minutes; ` +
-      `${config.idleResetMinutes} idle minutes = a real break.`
+async function launch(input) {
+  const a = getAdapter();
+  if (!a.supported) return { ok: false, errors: [a.message] };
+
+  const result = validatePrefs(input);
+  if (!result.ok) return { ok: false, errors: result.errors };
+
+  const supportedIds = new Set(
+    detectTargets({
+      platform: a.platform,
+      probes: { appInstalled: () => true, exeRunning: () => true },
+    })
+      .filter((t) => t.status !== 'unsupported-platform')
+      .map((t) => t.id)
   );
-
-  if (!demoMode && process.platform !== 'linux') {
-    // Most reliable once the app is packaged; in dev, keep `npm start` running.
-    app.setLoginItemSettings({ openAtLogin: !!config.launchAtLogin });
+  const unsupported = result.prefs.targets.filter((id) => !supportedIds.has(id));
+  if (unsupported.length) {
+    return { ok: false, errors: [`target(s) not supported on ${a.platform}: ${unsupported.join(', ')}`] };
   }
 
-  if (demoMode) {
-    console.log('[open-clowk] --demo: skipping the wait. Enjoy the show.');
-    showOverlay();
-  } else {
-    setInterval(onTick, TICK_SECONDS * 1000);
+  prefs = result.prefs;
+  savePrefs(prefs);
+  launched = true;
+
+  reminder = createReminder({
+    checkFrontmost: () => pendingFrontmostMatch,
+    onIntervene: showOverlay,
+  });
+
+  if (setupWindow) setupWindow.close();
+  reminder.arm(prefs.minutes);
+  console.log(
+    `[open-clowk] launched: every ${prefs.minutes} minute(s), watching for ` +
+      prefs.targets.join(', ') + '. Tic tac.'
+  );
+  return { ok: true };
+}
+
+// Set synchronously by the frontmost poller; the reminder reads it when an
+// interval elapses and while an intervention is pending.
+let pendingFrontmostMatch = false;
+
+async function pollFrontmost() {
+  if (!launched || !reminder) return;
+  try {
+    const front = await getAdapter().frontmost();
+    pendingFrontmostMatch = matchFrontmost({
+      frontmost: front,
+      selected: prefs.targets,
+      platform: getAdapter().platform,
+      execRunning: (name) => cachedExecRunning[name] === true,
+    });
+  } catch (e) {
+    pendingFrontmostMatch = false;
   }
+}
+
+const cachedExecRunning = {};
+async function refreshExecRunning() {
+  for (const name of ['codex', 'claude']) {
+    cachedExecRunning[name] = await getAdapter().execRunning(name);
+  }
+}
+
+/* ---------- wiring ---------- */
+
+ipcMain.handle('setup:state', async () => {
+  const d = await detect();
+  return { ...d, defaults: { minutes: DEFAULT_MINUTES }, saved: loadPrefs() };
+});
+
+ipcMain.handle('setup:launch', (_event, input) => launch(input));
+
+ipcMain.on('clowk-action', (_event, reason) => handleOverlayAction(reason));
+
+app.whenReady().then(async () => {
+  console.log('[open-clowk] timed terminal mascot. It reads app names, nothing else.');
+  const a = getAdapter();
+  if (!a.supported) console.log(`[open-clowk] ${a.message}`);
+  prefs = loadPrefs();
+  showSetup();
+  await refreshExecRunning();
+  setInterval(pollFrontmost, 2000);
+  setInterval(refreshExecRunning, 5000);
 });
 
 app.on('window-all-closed', () => {
-  // Keep the daemon alive; the whole point is to come back.
-  if (demoMode) app.quit();
+  // Before Launch, closing setup ends the app. After Launch the reminder runs
+  // windowless until an intervention or Shut down.
+  if (!launched) app.quit();
 });
+
+// Acceptance-test hook: lets the suite drive setup/launch/intervention with an
+// injected (fake) Electron and adapter fixtures. No effect under the real app.
+module.exports = { showSetup, showOverlay, launch, handleOverlayAction, loadPrefs, DEFAULT_MINUTES };

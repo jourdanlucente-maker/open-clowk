@@ -8,10 +8,9 @@
   },
   "scripts": {
     "start": "electron .",
-    "demo": "electron . --demo",
     "cli": "node bin/open-clowk.js",
     "cli:all": "node bin/open-clowk.js --all",
-    "test": "node test/activity.test.js"
+    "test": "node test/run-all.js"
   },
   "keywords": [
     "break-reminder",

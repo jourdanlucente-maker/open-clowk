@@ -1,7 +1,0 @@
-{
-  "activeMinutes": 90,
-  "idleResetMinutes": 5,
-  "snoozeMinutes": 10,
-  "sceneSeconds": 30,
-  "launchAtLogin": false
-}

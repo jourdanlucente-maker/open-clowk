@@ -1,0 +1,107 @@
+/* Open Clowk setup window */
+
+:root {
+  --orange: #e8632a;
+  --ink: #17130e;
+  --cream: #f2e9db;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 28px 32px;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: Menlo, Monaco, monospace;
+  font-size: 14px;
+}
+
+h1 {
+  margin: 0;
+  color: var(--orange);
+  font-size: 26px;
+  letter-spacing: 4px;
+}
+
+.tagline {
+  margin: 4px 0 24px;
+  opacity: 0.55;
+  font-size: 12px;
+}
+
+.field { display: block; margin-bottom: 20px; }
+
+#interval {
+  width: 72px;
+  margin: 0 8px;
+  padding: 6px 8px;
+  background: #241d15;
+  border: 1px solid var(--orange);
+  border-radius: 6px;
+  color: var(--cream);
+  font: inherit;
+  text-align: center;
+}
+
+.field-label { margin: 0 0 10px; }
+
+.target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.target:hover { background: #241d15; }
+
+.target input { accent-color: var(--orange); }
+.target input:disabled + .name { opacity: 0.35; }
+
+.target .status {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.error {
+  color: #ff7b54;
+  font-size: 12px;
+  min-height: 16px;
+}
+
+#launch {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--orange);
+  color: var(--ink);
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: bold;
+  font-size: 16px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+#launch:disabled { opacity: 0.35; cursor: default; }
+
+.privacy {
+  margin-top: 22px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.45;
+}
+
+.compat {
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px dashed var(--orange);
+  border-radius: 8px;
+  color: var(--orange);
+  font-size: 12px;
+  line-height: 1.5;
+}

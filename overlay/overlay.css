@@ -6,11 +6,6 @@ html, body {
   font-family: 'SF Mono', Menlo, Consolas, monospace;
 }
 
-/* Browser demo backdrop (?bg=1) so you can see the scene outside Electron */
-body.demo-bg {
-  background: linear-gradient(160deg, #1d2433 0%, #10141d 100%);
-}
-
 #stage { position: fixed; inset: 0; }
 
 /* ---------- Clocks ---------- */
@@ -145,5 +140,18 @@ body.sprites #robot-img { display: block; }
   border: 2.5px solid #17130e;
 }
 #btn-break  { background: #e8632a; color: #fff3e0; }
-#btn-snooze { background: #f2e9db; color: #17130e; }
+#btn-ignore { background: #f2e9db; color: #17130e; }
+#btn-shutdown { background: #17130e; color: #f2e9db; }
+
+#countdown {
+  margin: 14px 0 10px;
+  padding: 12px 14px;
+  border: 2.5px dashed #b3541e;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  color: #b3541e;
+  text-align: center;
+}
+
 .bubble-footer { font-size: 11px; color: #8d7f68; }

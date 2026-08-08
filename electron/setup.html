@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Open Clowk</title>
+<link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <h1>OPEN CLOWK</h1>
+  <p class="tagline">the anti-wellness wellness mascot · tic tac, MF</p>
+
+  <div id="compat" class="compat" hidden></div>
+
+  <div id="form">
+    <label class="field">
+      Remind me every
+      <input id="interval" type="number" min="1" step="1" value="30">
+      minutes
+    </label>
+
+    <p class="field-label">…while I'm working in:</p>
+    <div id="targets"></div>
+
+    <p id="error" class="error" hidden></p>
+    <button id="launch" disabled>Launch</button>
+
+    <p class="privacy">
+      Open Clowk reads the frontmost app's name — and for Codex/Claude, the
+      executable name. Nothing else. No keystrokes, no terminal contents,
+      no window titles, no telemetry.
+    </p>
+  </div>
+
+  <script src="setup.js"></script>
+</body>
+</html>

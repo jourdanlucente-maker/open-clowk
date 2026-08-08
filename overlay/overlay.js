@@ -3,13 +3,18 @@
  * Visuals come from the official Higgsfield-rendered sprites (same robot and
  * pocket watch as the Open Clowk posters). Load order per sprite:
  *   1. local file in ../assets/   2. CDN   3. built-in CSS art fallback
+ *
+ * The overlay runs only inside the Electron mascot window — there is no
+ * browser mode. Actions: Take a break (visible 5-minute countdown, then the
+ * interval restarts), Ignore (dismiss, interval restarts), Shut down (quits
+ * Open Clowk only).
  */
 
 'use strict';
 
 const params = new URLSearchParams(location.search);
-const INTERVAL = params.get('interval') || '90';
-if (params.get('bg')) document.body.classList.add('demo-bg');
+const INTERVAL = params.get('interval') || '30';
+const BREAK_SECONDS = 300;
 
 document.getElementById('bubble-line1').textContent =
   `You've been coding for ${INTERVAL} minutes straight.`;
@@ -200,15 +205,34 @@ async function scene() {
   document.getElementById('bubble').hidden = false;
 }
 
-function dismiss(reason) {
-  if (window.clowk) {
-    window.clowk.dismiss(reason);
-  } else {
-    document.getElementById('bubble').hidden = true; // plain-browser demo
-  }
+function act(reason) {
+  if (window.clowk) window.clowk.action(reason);
 }
 
-document.getElementById('btn-break').addEventListener('click', () => dismiss('break'));
-document.getElementById('btn-snooze').addEventListener('click', () => dismiss('snooze'));
+function startBreak() {
+  document.querySelector('.bubble-buttons').hidden = true;
+  const el = document.getElementById('countdown');
+  el.hidden = false;
+  let left = BREAK_SECONDS;
+  const render = () => {
+    const m = Math.floor(left / 60);
+    const s = String(left % 60).padStart(2, '0');
+    el.textContent = `Break — the clocks stay open. Back in ${m}:${s}`;
+  };
+  render();
+  const tick = setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearInterval(tick);
+      act('break');
+      return;
+    }
+    render();
+  }, 1000);
+}
+
+document.getElementById('btn-break').addEventListener('click', startBreak);
+document.getElementById('btn-ignore').addEventListener('click', () => act('ignore'));
+document.getElementById('btn-shutdown').addEventListener('click', () => act('shutdown'));
 
 scene();
