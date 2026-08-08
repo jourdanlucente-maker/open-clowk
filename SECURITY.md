@@ -24,8 +24,8 @@ Two identity signals, both name-only:
    CLI. The set of names is closed and derived from the approved
    target list (`platformExeNames` in `electron/targets.js`), and it is asked
    in exactly two places:
-   - **at setup**, for the platform's supported target names (e.g.
-     `wezterm-gui`, `code`, `konsole`, `WindowsTerminal`, `devenv`, `codex`,
+   - **at setup**, for the platform's supported target names, normalized (e.g.
+     `wezterm-gui`, `code`, `konsole`, `windowsterminal`, `devenv`, `codex`,
      `claude`), so the availability checklist is honest rather than blank on
      platforms with no install probe;
    - **while running**, only for the executable names of the agent targets you

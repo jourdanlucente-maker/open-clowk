@@ -64,22 +64,27 @@ Every change after the import commit is a separate, reviewable commit:
 - `490927c` — minimal headless GitHub Actions workflow
   (`.github/workflows/test.yml`: `npm install` + `npm test`, Ubuntu, Node 22)
   so the pull request carries a real status check. No product change.
-- *(this commit)* — final review corrections: availability detection now
-  resolves the whole supported executable-name set for the platform (every
-  promised Windows/Linux terminal and IDE is selectable when running, and a
-  platform with no install probe no longer claims an app is absent); the
-  lifetime two-second frontmost poll is gone — the reminder probes only when
-  an interval is due and then on its bounded pending cadence; the
-  display-sized mascot layer lost its preload/IPC bridge; workflow
-  least-privilege permissions and de-duplicated triggers; documentation
-  matched to the exact probe scope. Follow-up in the same review round: the
-  POSIX executable check matches the whole name case-insensitively
-  (`pgrep -xi`), so a real `Cursor`/`Code` binary is found from the normalized
-  target name, and the setup checklist's probes run concurrently instead of
-  one adapter timeout after another. Case folding was then scoped to
-  application availability only: the `codex`/`claude` gate matches exactly, so
-  the `Claude` desktop application cannot satisfy a selected Claude Code
-  target.
+- `a4296d8` — review corrections: availability detection now resolves the
+  whole supported executable-name set for the platform (every promised
+  Windows/Linux terminal and IDE is selectable when running, and a platform
+  with no install probe no longer claims an app is absent); the lifetime
+  two-second frontmost poll is gone — the reminder probes only when an
+  interval is due and then on its bounded pending cadence; the display-sized
+  mascot layer lost its preload/IPC bridge; workflow least-privilege
+  permissions and de-duplicated triggers; documentation matched to the exact
+  probe scope.
+- `890d847` — the POSIX executable check matches the whole name
+  case-insensitively (`pgrep -xi`), so a real `Cursor`/`Code` binary is found
+  from the normalized target name, and the setup checklist's probes run
+  concurrently instead of one adapter timeout after another.
+- `b22c454` — case folding scoped to application availability only: the
+  `codex`/`claude` gate matches exactly (`exeMatchIsCaseSensitive` in
+  `electron/targets.js` owns that decision), so the `Claude` desktop
+  application cannot satisfy a selected Claude Code target.
+- *(this commit)* — documentation matched to the final review round: this
+  commit list split back into one entry per commit, and `SECURITY.md`'s
+  examples of probed executable names written as the normalized names the
+  adapters actually receive.
 
 ### Superseded idle-time line (archived, not part of this branch)
 
