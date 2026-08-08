@@ -99,7 +99,7 @@ body.sprites #robot-img { display: block; }
 /* ---------- Robot ---------- */
 #robot {
   position: fixed;
-  bottom: 24px; left: 100vw;
+  bottom: 24px; left: -140px;
   width: 96px; height: 120px;
   transition: left 1.6s cubic-bezier(.45,.05,.55,.95), bottom 1.6s cubic-bezier(.45,.05,.55,.95);
   z-index: 10;

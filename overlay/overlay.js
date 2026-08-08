@@ -19,6 +19,23 @@
 const params = new URLSearchParams(location.search);
 const INTERVAL = params.get('interval') || '30';
 
+/* The control card owns the bottom-right corner of the same display and is
+ * created second, so it draws on top of this layer: any low pose whose box
+ * reaches into the card is invisible. Its geometry comes from the main
+ * process rather than being guessed here — hardcoding offsets against it is
+ * what put the mascot behind the card twice. */
+const CARD = {
+  width: Number(params.get('cardWidth')) || 460,
+  height: Number(params.get('cardHeight')) || 280,
+  margin: Number(params.get('cardMargin')) || 40,
+};
+const ROBOT_WIDTH = 96;
+const CARD_GAP = 24;
+
+const cardTopFromBottom = () => CARD.height + CARD.margin;
+const robotClearLeft = () =>
+  Math.max(0, innerWidth - CARD.width - CARD.margin - ROBOT_WIDTH - CARD_GAP);
+
 document.getElementById('bubble-line1').textContent =
   `You've been coding for ${INTERVAL} minutes straight.`;
 
@@ -171,8 +188,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function walkTo(clockEl) {
   const rect = clockEl.getBoundingClientRect();
-  robot.style.left = `${Math.max(0, rect.left - 90)}px`;
-  robot.style.bottom = `${Math.max(24, innerHeight - rect.bottom - 20)}px`;
+  const bottom = Math.max(24, innerHeight - rect.bottom - 20);
+  let left = Math.max(0, rect.left - 90);
+  if (bottom < cardTopFromBottom()) left = Math.min(left, robotClearLeft());
+  robot.style.left = `${left}px`;
+  robot.style.bottom = `${bottom}px`;
 }
 
 async function scene() {
@@ -184,7 +204,10 @@ async function scene() {
   const clocks = SPOTS.map((spot, i) => buildClock(spot, i, sprites));
 
   await wait(300);
-  robot.style.left = `${innerWidth - 190}px`; // walk in from the right
+  // Walk in from the left. Entering from the right would spend the whole
+  // 1.6s travel crossing the card's column at floor level, so the entrance
+  // the user is meant to notice would play out entirely behind it.
+  robot.style.left = `${Math.min(innerWidth * 0.5, robotClearLeft())}px`;
   await wait(1400);
 
   for (const clockEl of clocks) {
@@ -201,7 +224,7 @@ async function scene() {
     await wait(400);
   }
 
-  robot.style.left = `${innerWidth - 660}px`;
+  robot.style.left = `${robotClearLeft()}px`;
   robot.style.bottom = '80px';
   await wait(1300);
   robot.classList.remove('walking');

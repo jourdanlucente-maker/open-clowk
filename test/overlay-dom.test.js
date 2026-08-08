@@ -54,12 +54,22 @@ class FakeClassList {
   }
 }
 
+/* Records every left/bottom assignment, so a pose the card would cover is
+ * catchable here instead of only by looking at a running app. */
 function makeStyle() {
-  return {
+  const target = {
+    history: [],
     setProperty(k, v) {
       this[k] = v;
     },
   };
+  return new Proxy(target, {
+    set(obj, key, value) {
+      obj[key] = value;
+      if (key === 'left' || key === 'bottom') obj.history.push([key, value]);
+      return true;
+    },
+  });
 }
 
 class FakeElement {
@@ -208,7 +218,7 @@ function runControl() {
   return { document, actions };
 }
 
-function runOverlay({ online }) {
+function runOverlay({ online, search = '?interval=30&cardWidth=460&cardHeight=280&cardMargin=40' }) {
   const document = buildDocument();
   const actions = [];
 
@@ -230,8 +240,9 @@ function runOverlay({ online }) {
 
   const sandbox = {
     document,
-    location: { search: '?interval=30' },
+    location: { search },
     URLSearchParams,
+    Number,
     Image: FakeImage,
     innerWidth: 1440,
     innerHeight: 900,
@@ -335,6 +346,61 @@ async function untilActions(actions, n) {
     }
     assert.ok(document.byId['bubble-line1'].textContent.includes('30 minutes'), 'message carries the interval');
     assert.deepStrictEqual(actions, [], 'the mascot layer sends no intent of its own');
+  }
+
+  // --- no robot pose is hidden behind the control card --------------------------
+  // The card is a separate window drawn on top of this layer, so a pose whose
+  // box reaches into it is simply not visible. The layer is told the card's
+  // geometry, so the check runs against whatever the card actually is.
+  {
+    const ROBOT = { width: 96, height: 120 };
+    const START_BOTTOM = 24; // #robot's CSS default, before any JS assignment
+
+    const posesOf = (document, card) => {
+      const poses = [];
+      let left = null;
+      let bottom = START_BOTTOM;
+      for (const [key, value] of document.byId.robot.style.history) {
+        if (key === 'left') left = parseFloat(value);
+        else bottom = parseFloat(value);
+        if (left !== null) poses.push({ left, bottom, card });
+      }
+      return poses;
+    };
+
+    const assertClear = (poses, label) => {
+      assert.ok(poses.length >= 5, `${label}: every scripted pose was captured`);
+      for (const { left, bottom, card } of poses) {
+        const cardLeft = 1440 - card.width - card.margin;
+        const cardTopFromBottom = card.height + card.margin;
+        const overlapsX = left + ROBOT.width > cardLeft;
+        const overlapsY = bottom < cardTopFromBottom;
+        assert.ok(
+          !(overlapsX && overlapsY),
+          `${label}: pose left=${left} bottom=${bottom} sits behind the ${card.width}x${card.height} card`
+        );
+      }
+    };
+
+    const standard = { width: 460, height: 280, margin: 40 };
+    const { document } = runOverlay({ online: false });
+    await untilSceneDone(document);
+    assertClear(posesOf(document, standard), 'default card');
+
+    // A different card must move the robot, not silently overlap it — which is
+    // what proves the layer reads the geometry instead of carrying constants.
+    const bigger = { width: 700, height: 400, margin: 40 };
+    const big = runOverlay({
+      online: false,
+      search: '?interval=30&cardWidth=700&cardHeight=400&cardMargin=40',
+    });
+    await untilSceneDone(big.document);
+    const bigPoses = posesOf(big.document, bigger);
+    assertClear(bigPoses, 'oversized card');
+    assert.ok(
+      Math.max(...bigPoses.map((p) => p.left)) < Math.max(...posesOf(document, standard).map((p) => p.left)),
+      'a wider card pushes every pose further from the corner it owns'
+    );
   }
 
   // --- the control card is usable immediately, without the animation ------------

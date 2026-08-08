@@ -166,7 +166,14 @@ function showOverlay() {
   if (overlayWindow || controlWindow) return;
 
   const { width, height } = screen.getPrimaryDisplay().bounds;
-  const query = { interval: String(prefs.minutes) };
+  // The mascot layer has to keep every pose out from under the card, so it is
+  // told the card's box instead of carrying its own copy of these numbers.
+  const query = {
+    interval: String(prefs.minutes),
+    cardWidth: String(CARD_WIDTH),
+    cardHeight: String(CARD_HEIGHT),
+    cardMargin: String(CARD_MARGIN),
+  };
 
   overlayWindow = new BrowserWindow(interventionWindowOptions({ width, height, x: 0, y: 0 }));
   overlayWindow.setIgnoreMouseEvents(true);

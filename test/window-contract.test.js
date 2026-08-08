@@ -153,6 +153,22 @@ function cleanup() {
   assert.ok(overlayFile.endsWith(path.join('overlay', 'overlay.html')), 'the mascot layer is a local file');
   assert.strictEqual(overlayOpts.query.interval, '30', 'the scene carries the chosen interval');
 
+  // The card is drawn on top of the mascot layer, so the layer has to know the
+  // box it must keep its poses out of, rather than carrying its own copy.
+  assert.deepStrictEqual(
+    {
+      width: overlayOpts.query.cardWidth,
+      height: overlayOpts.query.cardHeight,
+      margin: overlayOpts.query.cardMargin,
+    },
+    {
+      width: String(card.opts.width),
+      height: String(card.opts.height),
+      margin: String(mascot.opts.width - card.opts.x - card.opts.width),
+    },
+    'the mascot layer is told the real card geometry'
+  );
+
   // --- the display-sized layer never claims a click; the card always does ------
   assert.deepStrictEqual(
     mascot.calls.setIgnoreMouseEvents,
