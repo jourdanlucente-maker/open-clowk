@@ -35,13 +35,30 @@ and none of its code, assets (WebP sprite derivatives), or history is part of th
 
 Every change after the import commit is a separate, reviewable commit:
 
-- CLI banner fixed to agree with `package.json` at `2.0.0`.
-- Acceptance test suite added (window contract, no-browser path, overlay DOM, offline CSS-art, demo/persistence).
-- Documentation updated (README, SECURITY, provenance).
-- Project `AGENTS.md` added.
+- `6834c13` — CLI banner fixed to derive its version from `package.json` (`2.0.0`).
+- `bfd7efa` — captain-approved timed-terminal mascot MVP spec committed under `specs/`.
+- `09a988b` — timed-terminal MVP implemented per that spec: native setup window
+  (interval + supported-target checklist + Launch), reminder state machine,
+  least-information platform adapters, three exact intervention actions
+  (Take a break / Ignore / Shut down), external-close bug fix. This
+  **supersedes** the idle-time-only contract: the idle tracker, its config,
+  its tests, and the `--demo` mode were removed.
+- `836fa11` — deterministic acceptance suite for the timed MVP.
+- Documentation updated (README, SECURITY, assets policy) and project
+  `AGENTS.md` added.
+
+### Superseded idle-time line (archived, not part of this branch)
+
+An earlier idle-time acceptance/docs line plus its pipeline review fixes
+(`29797bf`, `da2bd61`, `5a8f784`, `6f08746`, `5cd8b0f`, `3870b26`) was
+invalidated by the captain's product clarification. It is preserved
+byte-for-byte at local ref `archive/open-clowk-idle-import-pre-supersession-20260807`
+(commit `3870b26e0c1952883e20280a618a07c398375779`) and is deliberately
+**not** in this branch's history. Its sprite-policy wording (captain's
+Option A) was re-implemented fresh in `assets/README.md`.
 
 ## Open captain decisions (not resolved here)
 
-Sprite redistribution (the three Higgsfield PNGs stay uncommitted), distribution shape,
-npm name, PR #1 fate, launch-at-login feature, and parent-repo reconciliation remain
+Sprite redistribution (policy owned by `assets/README.md`), distribution shape,
+npm name, PR #1 fate, and parent-repo reconciliation remain
 captain decisions. Nothing here publishes, packages, signs, or releases anything.

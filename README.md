@@ -1,6 +1,6 @@
 # ⏰ OPEN CLOWK
 
-**An agent that opens every clock. Now on your actual screen.**
+**A timed break mascot for people who live in the terminal.**
 
 Tic tac, MF.
 
@@ -12,11 +12,11 @@ Open Clowk is the anti-wellness wellness mascot from the
 [Jean Michel](https://github.com/jourdanlucente-maker/JEAN-MICHEL-REPOS) universe.
 It has two personalities:
 
-1. **🖥 The Desktop Mascot (the useful one, accidentally).** It sits invisible
-   while you code. When you've gone too long without a pause — **90 minutes by
-   default, you decide** — the orange pixel robot walks onto your screen with a
-   crowbar and starts opening your clocks. Lids swing, gears spill, time
-   escapes. Then it looks at you: *"Take the break. Tic tac, MF."*
+1. **🖥 The Desktop Mascot (the useful one, accidentally).** You pick a
+   reminder interval and the terminals/IDEs you work in. Every interval, the
+   orange pixel robot walks onto your screen with a crowbar and opens your
+   clocks — **but only while one of your chosen apps is frontmost**. It
+   never interrupts you in another app, and it never opens a browser.
 2. **💻 The CLI (the chaotic one).** `open-clowk --all` opens 12 timezone
    clocks in ASCII and burns Jean Michel Tokens into a persistent ledger.
    Zero utility. That's the point.
@@ -26,68 +26,79 @@ anymore — and you can't pretend you didn't see the robot.
 
 ## Try it (desktop mascot)
 
+Open Clowk runs from source. This is currently the **only** supported way to
+run it — there is no npm package, no DMG, no binary release (see
+[Distribution status](#distribution-status)).
+
 ```bash
-git clone https://github.com/jourdanlucente-maker/JEAN-MICHEL-REPOS.git
-cd JEAN-MICHEL-REPOS/open-clowk
+git clone https://github.com/jourdanlucente-maker/open-clowk.git
+cd open-clowk
 npm install
-
-# see the robot RIGHT NOW, no 90-minute wait:
-npm run demo
-
-# run it for real (waits intervalMinutes, then the robot appears):
 npm start
 ```
 
-When the robot appears you get two buttons: **"OK, taking a break 🌱"**
-(resets the timer) or **"Snooze 10 min 🙄"** (the robot judges you and
-returns). Ignore it entirely and it stands down… until next time.
+A native **setup window** opens (never a browser page):
+
+1. **Reminder interval** — default 30 minutes; any positive number works.
+   For a quick test, set 1 minute.
+2. **Targets** — a checklist of supported apps, detected honestly:
+   Terminal.app, Windows Terminal, WezTerm, GNOME Terminal, Konsole, Cursor,
+   VS Code, Visual Studio, Codex, Claude Code. Apps that are not installed,
+   agents that are not running, and platforms a target doesn't support are
+   shown as such — never silently accepted. Pick at least one.
+3. **Launch** — arms the timer and closes the setup window.
+
+At each interval the transparent, frameless, always-on-top mascot appears —
+only while a selected target is frontmost (Codex/Claude additionally require
+their executable to be running). If you've switched away, the intervention
+stays pending and shows the moment you come back.
+
+Every intervention offers exactly three actions:
+
+- **Take a break 🌱** — a visible five-minute countdown runs on screen, then
+  the overlay dismisses and the original interval restarts.
+- **Ignore 🙄** — dismisses immediately and restarts the full interval.
+- **Shut down ✕** — quits Open Clowk. Only Open Clowk. It never closes,
+  pauses, kills, injects into, or modifies your terminal, IDE, Codex, or
+  Claude session.
+
+Preferences persist locally (`~/.open-clowk/prefs.json`). The app starts only
+when you launch it — no login persistence, no global install.
+
+## Platform support
+
+- **macOS** — verified. The first foreground check asks for one-time
+  Automation consent for System Events; it returns the frontmost app's
+  **name** and nothing else.
+- **Windows / Linux (X11)** — adapters included (process-name-only probes),
+  exercised through fixtures in the test suite but **not yet verified on
+  real Windows/Linux machines**. Honest status, no claims.
+- **Linux/Wayland** — clearly reported as unsupported. No browser fallback,
+  no global reminder.
 
 ## The look
 
 The robot and the pocket watches are the **same Higgsfield-rendered art as
-the Open Clowk posters** (claymation-style orange robot, brass watch whose
-face swings open). Sprites load from `assets/` if present, else from the CDN,
-else the app falls back to built-in pixel art so the reminder always works —
-see [`assets/README.md`](assets/README.md) to localize them permanently.
+the Open Clowk posters**. Sprites load in three tiers: local `assets/*.png`
+(not committed — see the policy in [`assets/README.md`](assets/README.md)),
+a user-scoped CDN, and built-in CSS pixel art that always works offline. Any
+miss falls back to CSS art for the whole scene; the offline path is covered
+by `test/overlay-dom.test.js`.
 
-## How it knows you're coding
+## What it knows about you
 
-It doesn't spy on your apps. It reads one number the OS already exposes:
-**seconds since your last keyboard/mouse input, system-wide** (Electron's
-`powerMonitor`, no permissions needed). That means Claude Code, VS Code,
-a terminal, Codex, Kimi, vibe coding in a browser — all of it counts,
-because activity is activity.
+Almost nothing, on purpose. Open Clowk reads:
 
-- The counter grows only while you're **actually active**.
-- Step away for `idleResetMinutes` (a real break) and it **resets itself** —
-  no buttons.
-- Hit `activeMinutes` of accumulated activity and the robot is dispatched.
+- the **frontmost application's name** (to know whether a selected target is
+  in front), and
+- for Codex/Claude targets, whether an **executable named** `codex`/`claude`
+  is running.
 
-Yes, 90 minutes of Instagram also summons the robot. We consider this a
-feature.
-
-## Configure it
-
-Edit `clowk.config.json` (or create `~/.open-clowk/config.json` to override):
-
-```json
-{
-  "activeMinutes": 90,
-  "idleResetMinutes": 5,
-  "snoozeMinutes": 10,
-  "sceneSeconds": 30,
-  "launchAtLogin": false
-}
-```
-
-- `activeMinutes` — accumulated real activity before the robot shows up
-- `idleResetMinutes` — walk away this long and the counter forgives you
-- `snoozeMinutes` — how much active time a snooze buys you
-- `sceneSeconds` — how long the robot waits before giving up on you
-- `launchAtLogin` — register with the OS at login (most reliable once the app
-  is packaged; while running from source, keep `npm start` in a terminal tab)
-
-(Old configs with `intervalMinutes` still work.)
+It never records or inspects arguments, commands, prompts, terminal
+contents, window titles, keystrokes, clicks, files, screen images, audio,
+network contents, or activity history. No telemetry, no account, no cloud
+service. See [`SECURITY.md`](SECURITY.md); the boundary is enforced by
+`test/no-browser-static.test.js`.
 
 ## Try it (CLI)
 
@@ -96,10 +107,36 @@ npm run cli -- --all     # open every clock. no survivors.
 npm run cli -- --ledger  # total damage: clocks opened, Jean Michel Tokens burned
 ```
 
-## Preview without installing anything
+## Distribution status
 
-Open `overlay/overlay.html?bg=1&interval=90` in any browser — same scene,
-fake desktop backdrop.
+Unresolved, deliberately. There is **no** published npm package, no DMG, no
+signed binary, and no release of any kind. `npm install -g open-clowk` is
+**not** a supported installation path (an old marketing artifact claimed it;
+that claim was and remains wrong). The distribution format is an open owner
+decision — nothing here may be published, packaged, signed, or released
+until it is made.
+
+## Provenance
+
+The product tree was imported byte-for-byte from `open-clowk/` at commit
+`186619db09e3d8d693b90f7a38fae079bec0775b` (tree
+`3c219a82c84723701b8187462748395c0e4d00ea`) of the read-only source
+repository `JEAN-MICHEL-REPOS`, then rebuilt as the timed-terminal mascot
+per the captain-approved spec ([`specs/2026-08-07-timed-terminal-mascot-mvp.md`](specs/2026-08-07-timed-terminal-mascot-mvp.md)).
+Receipt, pinned preservation refs, and the full list of post-import changes:
+[`MIGRATION.md`](MIGRATION.md).
+
+## Tests
+
+```bash
+npm test
+```
+
+Headless and deterministic: reminder state machine, target matching,
+platform adapters (fixtures), the full setup→launch→intervention cycle
+through an injected Electron, overlay scene + countdown DOM, static
+no-browser/privacy guards, CLI version agreement. No window opens, no
+socket binds, no permission is requested.
 
 ## Contribute (money version)
 
@@ -110,12 +147,6 @@ Every Jean Michel repo runs on voluntary fuel:
 Contributions go to Jean Michel AI (owned by Jourdan Lucente). They are
 voluntary, non-refundable, and buy approximately: tokens, and the robot's
 crowbar maintenance.
-
-## Contribute (code version)
-
-Issues and PRs welcome. Ideas that fit: more clock types (cuckoo!), a
-grandfather clock boss fight, sound effects (*creeeeeeak*), Windows/macOS/Linux
-tray icon, i18n (FR/ES coming — the whole channel is trilingual).
 
 ## License
 
