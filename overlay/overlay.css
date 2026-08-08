@@ -154,4 +154,6 @@ body.sprites #robot-img { display: block; }
   text-align: center;
 }
 
+.bubble-hint { font-size: 11px; color: #b3541e; margin-bottom: 6px; }
+
 .bubble-footer { font-size: 11px; color: #8d7f68; }

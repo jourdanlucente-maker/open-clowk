@@ -14,7 +14,7 @@
   <div id="form">
     <label class="field">
       Remind me every
-      <input id="interval" type="number" min="1" step="1" value="30">
+      <input id="interval" type="number" min="1" max="1440" step="1" value="30">
       minutes
     </label>
 
@@ -23,6 +23,11 @@
 
     <p id="error" class="error" hidden></p>
     <button id="launch" disabled>Launch</button>
+
+    <div id="running" class="running" hidden>
+      <p id="running-line">Open Clowk is running. Relaunch to change the interval or targets.</p>
+      <button id="quit">Quit Open Clowk</button>
+    </div>
 
     <p class="privacy">
       Open Clowk reads the frontmost app's name — and for Codex/Claude, the

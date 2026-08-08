@@ -145,6 +145,14 @@ function buildDocument() {
   document.byId.robot.className = 'walking';
   document.byId.bubble.hidden = true;
   document.byId.countdown.hidden = true;
+
+  document.listeners = {};
+  document.addEventListener = function (event, cb) {
+    (this.listeners[event] = this.listeners[event] || []).push(cb);
+  };
+  document.dispatch = function (event, payload) {
+    (this.listeners[event] || []).forEach((cb) => cb(payload));
+  };
   return document;
 }
 
@@ -153,6 +161,7 @@ function buildDocument() {
 function runOverlay({ online }) {
   const document = buildDocument();
   const actions = [];
+  const hints = [];
 
   class FakeImage {
     set src(value) {
@@ -177,7 +186,12 @@ function runOverlay({ online }) {
     Image: FakeImage,
     innerWidth: 1440,
     innerHeight: 900,
-    window: { clowk: { action: (reason) => actions.push(reason) } },
+    window: {
+      clowk: {
+        action: (reason) => actions.push(reason),
+        setInteractive: (on) => hints.push(on),
+      },
+    },
     // Immediate timers: dramatic pauses and countdown seconds collapse to
     // macrotask turns; ordering is preserved, wall time is not.
     setTimeout: (fn) => setTimeout(fn, 0),
@@ -206,7 +220,7 @@ function runOverlay({ online }) {
   vm.createContext(sandbox);
   vm.runInContext(OVERLAY_JS, sandbox, { filename: 'overlay.js' });
 
-  return { document, actions };
+  return { document, actions, hints };
 }
 
 async function untilSceneDone(document) {
@@ -274,6 +288,44 @@ async function untilActions(actions, n) {
     document.byId['btn-ignore'].click();
     document.byId['btn-shutdown'].click();
     assert.deepStrictEqual(actions, ['ignore', 'shutdown'], 'ignore and shutdown reach the bridge exactly');
+  }
+
+  // --- hit-testing is hinted only over the message box --------------------------
+  {
+    const { document, hints } = runOverlay({ online: false });
+    // Mid-scene the message box is still hidden: nothing may claim the pointer.
+    document.dispatch('mousemove', { clientX: 150, clientY: 150 });
+    assert.deepStrictEqual(hints, [], 'while the bubble is hidden the overlay stays click-through');
+
+    await untilSceneDone(document);
+    document.dispatch('mousemove', { clientX: 150, clientY: 150 });
+    assert.deepStrictEqual(hints, [true], 'pointer over the message box asks for hit-testing');
+    document.dispatch('mousemove', { clientX: 150, clientY: 150 });
+    assert.deepStrictEqual(hints, [true], 'the hint is not re-sent while the pointer stays put');
+    document.dispatch('mousemove', { clientX: 900, clientY: 700 });
+    assert.deepStrictEqual(hints, [true, false], 'leaving it hands the clicks back to the app underneath');
+  }
+
+  // --- Escape is available for the whole intervention ---------------------------
+  {
+    // During the walk-in the buttons do not exist yet.
+    const { document, actions } = runOverlay({ online: false });
+    await untilSceneDone(document);
+    document.dispatch('keydown', { key: 'a' });
+    assert.deepStrictEqual(actions, [], 'ordinary keys do nothing');
+    document.dispatch('keydown', { key: 'Escape' });
+    assert.deepStrictEqual(actions, ['ignore'], 'Escape dismisses and restarts the interval');
+  }
+  {
+    // During the five-minute countdown every button is hidden.
+    const { document, actions } = runOverlay({ online: false });
+    await untilSceneDone(document);
+    document.byId['btn-break'].click();
+    assert.strictEqual(document.byId.countdown.hidden, false, 'the countdown is running');
+    document.dispatch('keydown', { key: 'Escape' });
+    assert.deepStrictEqual(actions, ['break'], 'Escape ends the break early — no fourth intent');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(actions, ['break'], 'the cancelled countdown never fires again');
   }
 
   // --- sprite path: CDN art loads when reachable --------------------------------

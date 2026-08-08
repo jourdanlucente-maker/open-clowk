@@ -39,8 +39,8 @@ npm start
 
 A native **setup window** opens (never a browser page):
 
-1. **Reminder interval** — default 30 minutes; any positive number works.
-   For a quick test, set 1 minute.
+1. **Reminder interval** — default 30 minutes; a whole number from 1 to 1440
+   (24 hours). For a quick test, set 1 minute.
 2. **Targets** — a checklist of supported apps, detected honestly:
    Terminal.app, Windows Terminal, WezTerm, GNOME Terminal, Konsole, Cursor,
    VS Code, Visual Studio, Codex, Claude Code. Apps that are not installed,
@@ -62,14 +62,42 @@ Every intervention offers exactly three actions:
   pauses, kills, injects into, or modifies your terminal, IDE, Codex, or
   Claude session.
 
+**Esc** is always available and resolves whatever is in flight: during the
+walk-in (before the buttons exist) it acts as Ignore; during the countdown
+(while the buttons are hidden) it ends the break early. Either way the
+interval restarts — it is not a fourth action.
+
+The overlay window is display-sized but **click-through everywhere except the
+message box**, so it never swallows a click on empty pixels.
+
+If you pick a Codex/Claude target *together with* host apps, only those hosts
+count: **Claude Code + VS Code** never triggers in Terminal.app. Pick an agent
+on its own and any supported host counts, otherwise it could never trigger.
+
 Preferences persist locally (`~/.open-clowk/prefs.json`). The app starts only
 when you launch it — no login persistence, no global install.
+
+Only one Open Clowk runs at a time; starting it again reopens the running
+instance's setup window (as does clicking its dock/taskbar icon), where you
+can **Relaunch** with new settings or **Quit Open Clowk**.
+
+## Known limits (deliberate, first cut)
+
+- **The overlay appears on the primary display only.** If your selected
+  target is frontmost on a secondary monitor, the mascot still walks onto the
+  primary one. This is an accepted owner decision for this cut, not an
+  oversight — the window contract is pinned by `test/window-contract.test.js`.
+  Multi-display placement is a separate decision.
+- **No tray icon.** The setup window is the only surface: reopen it by
+  starting Open Clowk again or via its dock/taskbar icon.
 
 ## Platform support
 
 - **macOS** — verified. The first foreground check asks for one-time
   Automation consent for System Events; it returns the frontmost app's
-  **name** and nothing else.
+  **name** and nothing else. If that consent is denied or later revoked, the
+  frontmost probe stops answering — Open Clowk says so in the setup window
+  instead of running mute forever.
 - **Windows / Linux (X11)** — adapters included (process-name-only probes),
   exercised through fixtures in the test suite but **not yet verified on
   real Windows/Linux machines**. Honest status, no claims.

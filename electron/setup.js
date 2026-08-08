@@ -11,12 +11,17 @@ const STATUS_LABELS = {
 
 const state = { minutes: 30, selected: new Set(), supported: false };
 
+// Mirrors the bounds the main process enforces in validatePrefs; the main
+// process stays the authority, this only keeps the message immediate.
+const limits = { min: 1, max: 1440 };
+
 function validate() {
   const error = document.getElementById('error');
   const launch = document.getElementById('launch');
   const minutes = Number(document.getElementById('interval').value);
   let message = '';
-  if (!Number.isFinite(minutes) || minutes <= 0) message = 'The interval must be a positive number of minutes.';
+  if (!Number.isInteger(minutes) || minutes < limits.min || minutes > limits.max)
+    message = `The interval must be a whole number of minutes between ${limits.min} and ${limits.max}.`;
   else if (state.selected.size === 0) message = 'Pick at least one target.';
   error.hidden = !message;
   error.textContent = message;
@@ -60,15 +65,33 @@ async function init() {
   const s = await window.clowk.getSetupState();
   state.supported = s.supported;
 
+  const interval = document.getElementById('interval');
+  if (s.defaults) {
+    if (Number.isInteger(s.defaults.minMinutes)) limits.min = s.defaults.minMinutes;
+    if (Number.isInteger(s.defaults.maxMinutes)) limits.max = s.defaults.maxMinutes;
+    interval.min = String(limits.min);
+    interval.max = String(limits.max);
+  }
+
+  const compat = document.getElementById('compat');
   if (!s.supported) {
-    const compat = document.getElementById('compat');
     compat.hidden = false;
     compat.textContent = s.message;
     document.getElementById('launch').disabled = true;
+  } else if (s.compatMessage) {
+    // A capability that was granted at Launch can be revoked later; when the
+    // frontmost probe stops answering, this window is how the user hears it.
+    compat.hidden = false;
+    compat.textContent = s.compatMessage;
+  }
+
+  if (s.running) {
+    document.getElementById('running').hidden = false;
+    document.getElementById('launch').textContent = 'Relaunch';
   }
 
   const saved = s.saved || { minutes: s.defaults.minutes, targets: [] };
-  document.getElementById('interval').value = saved.minutes || s.defaults.minutes;
+  interval.value = saved.minutes || s.defaults.minutes;
   for (const id of saved.targets || []) state.selected.add(id);
 
   if (s.supported) renderTargets(s.targets);
@@ -90,5 +113,7 @@ document.getElementById('launch').addEventListener('click', async () => {
   }
   // on success the main process closes this window and arms the timer
 });
+
+document.getElementById('quit').addEventListener('click', () => window.clowk.quit());
 
 init();

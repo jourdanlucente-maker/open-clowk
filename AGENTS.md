@@ -30,6 +30,11 @@ fallback/preview is a build failure — `test/no-browser-static.test.js` and
   session; Shut down quits only Open Clowk.
 - No login persistence, no global install; prefs live in
   `~/.open-clowk/prefs.json`.
+- Accepted first-cut limits, pinned by tests — do not "fix" without an owner
+  decision: the overlay covers the **primary display only**
+  (`test/window-contract.test.js`), and there is no tray; the setup window
+  (reopened by a second start, dock/taskbar activate, or a lost frontmost
+  capability) is the only post-Launch surface.
 - Sprite policy is owned by `assets/README.md` (private local download OK —
   gitignored; no commit/convert/package/publish/redistribute; no PR #1
   WebP). Point to it; do not restate it.

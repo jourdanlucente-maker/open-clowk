@@ -89,6 +89,31 @@ h1 {
 
 #launch:disabled { opacity: 0.35; cursor: default; }
 
+.running {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #33291d;
+}
+
+.running p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+#quit {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  color: var(--cream);
+  border: 1px solid #6b5d49;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+#quit:hover { border-color: var(--orange); color: var(--orange); }
+
 .privacy {
   margin-top: 22px;
   font-size: 11px;

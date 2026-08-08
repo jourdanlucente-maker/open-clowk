@@ -92,12 +92,54 @@ const NOT_RUNNING = () => false;
   );
 }
 
+// --- an agent target never drags in a host the user left unchecked -----------
+{
+  const runningClaude = (name) => name === 'claude';
+  assert.ok(
+    !matchFrontmost({
+      frontmost: 'Terminal',
+      selected: ['claude-code', 'vscode'],
+      platform: 'darwin',
+      execRunning: runningClaude,
+    }),
+    'picking Claude Code + VS Code does not make Terminal.app a trigger'
+  );
+  assert.ok(
+    matchFrontmost({
+      frontmost: 'Code',
+      selected: ['claude-code', 'vscode'],
+      platform: 'darwin',
+      execRunning: runningClaude,
+    }),
+    'the selected host still matches for the agent'
+  );
+  assert.ok(
+    matchFrontmost({
+      frontmost: 'Terminal',
+      selected: ['claude-code', 'terminal'],
+      platform: 'darwin',
+      execRunning: () => false,
+    }),
+    'a selected host stands on its own, with or without the agent running'
+  );
+}
+
 // --- preference validation ---------------------------------------------------
 {
   assert.ok(validatePrefs({ minutes: 30, targets: ['terminal'] }).ok, 'default-shaped prefs validate');
   assert.ok(!validatePrefs({ minutes: 0, targets: ['terminal'] }).ok, 'zero interval rejected');
   assert.ok(!validatePrefs({ minutes: -5, targets: ['terminal'] }).ok, 'negative interval rejected');
   assert.ok(!validatePrefs({ minutes: 'abc', targets: ['terminal'] }).ok, 'non-numeric interval rejected');
+  // The trust boundary: prefs.json is hand-editable and the HTML input is cosmetic.
+  assert.ok(!validatePrefs({ minutes: 0.05, targets: ['terminal'] }).ok, 'sub-minute interval rejected');
+  assert.ok(!validatePrefs({ minutes: 1.5, targets: ['terminal'] }).ok, 'fractional interval rejected');
+  assert.ok(
+    !validatePrefs({ minutes: 35792, targets: ['terminal'] }).ok,
+    'an interval that overflows setTimeout into a 1ms fire loop is rejected'
+  );
+  assert.ok(!validatePrefs({ minutes: Infinity, targets: ['terminal'] }).ok, 'infinite interval rejected');
+  assert.ok(validatePrefs({ minutes: 1, targets: ['terminal'] }).ok, 'the shortest sane interval is allowed');
+  assert.ok(validatePrefs({ minutes: 1440, targets: ['terminal'] }).ok, 'a full day is allowed');
   assert.ok(!validatePrefs({ minutes: 30, targets: [] }).ok, 'at least one target is required');
   assert.ok(!validatePrefs({ minutes: 30 }).ok, 'missing targets rejected');
   const unknown = validatePrefs({ minutes: 30, targets: ['emacs'] });

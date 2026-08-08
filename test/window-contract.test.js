@@ -24,14 +24,24 @@ const { installFakeElectron } = require('./helpers/fake-electron');
 const electronState = installFakeElectron();
 
 // Adapter fixtures: macOS with Terminal frontmost; no agent running by default.
+// `front.current = null` reproduces a denied/revoked macOS Automation consent:
+// the probe answers nothing, forever, and never throws.
 const front = { current: 'Terminal' };
 const execs = { codex: false, claude: false };
+const probeCalls = { frontmost: 0, execRunning: 0 };
 const adapters = require('../electron/adapters');
 adapters.createAdapter = () => ({
   platform: 'darwin',
   supported: true,
-  frontmost: async () => front.current,
-  execRunning: async (name) => execs[name] === true,
+  frontmostFailureMessage: adapters.FRONTMOST_FAILED.darwin,
+  frontmost: async () => {
+    probeCalls.frontmost++;
+    return front.current;
+  },
+  execRunning: async (name) => {
+    probeCalls.execRunning++;
+    return execs[name] === true;
+  },
   appInstalled: (bundle) => bundle.includes('Terminal.app'),
 });
 
@@ -51,6 +61,11 @@ function cleanup() {
 
   // --- setup window is the first surface, and it is native --------------------
   assert.strictEqual(electronState.windows.length, 1, 'the setup window opens first');
+  assert.strictEqual(
+    electronState.singleInstanceLockCalls,
+    1,
+    'the single-instance lock is taken, so a second launch cannot stack a second timer'
+  );
   const setup = electronState.windows[0];
   assert.ok(
     setup.calls.loadFile[0][0].endsWith(path.join('electron', 'setup.html')),
@@ -72,6 +87,8 @@ function cleanup() {
   for (const [input, why] of [
     [{}, 'empty input'],
     [{ minutes: 0, targets: ['terminal'] }, 'non-positive interval'],
+    [{ minutes: 0.05, targets: ['terminal'] }, 'sub-minute interval (3s reminder loop)'],
+    [{ minutes: 40000, targets: ['terminal'] }, 'interval that overflows setTimeout to 1ms'],
     [{ minutes: 30, targets: [] }, 'no targets'],
     [{ minutes: 30, targets: ['emacs'] }, 'unknown target'],
     [{ minutes: 30, targets: ['konsole'] }, 'unsupported-platform target'],
@@ -93,6 +110,17 @@ function cleanup() {
   assert.strictEqual(reminder.state, 'armed');
   assert.strictEqual(reminder.minutes, 30);
 
+  // --- executable probes only run when an agent target actually needs them -----
+  {
+    const before = probeCalls.execRunning;
+    await main._test.refreshExecRunningIfWatched();
+    assert.strictEqual(
+      probeCalls.execRunning,
+      before,
+      'no Codex/Claude target selected: nothing spawns pgrep every 5s'
+    );
+  }
+
   // --- intervention: the mascot overlay keeps its exact window contract -------
   main._test.setFrontmostMatch(true);
   reminder.elapseNow();
@@ -110,6 +138,26 @@ function cleanup() {
   const [overlayFile, overlayOpts] = win.calls.loadFile[0];
   assert.ok(overlayFile.endsWith(path.join('overlay', 'overlay.html')), 'overlay is a local file');
   assert.strictEqual(overlayOpts.query.interval, '30', 'the scene carries the chosen interval');
+
+  // --- the display-sized overlay does not swallow the display's input ----------
+  assert.deepStrictEqual(
+    win.calls.setIgnoreMouseEvents[0],
+    [true, { forward: true }],
+    'the overlay starts click-through: empty pixels never eat a click'
+  );
+  const hover = (on) => electronState.ipcHandlers['clowk-interactive'](null, on);
+  hover(true);
+  assert.deepStrictEqual(
+    win.calls.setIgnoreMouseEvents[1],
+    [false],
+    'hit-testing turns on while the pointer is over the message box'
+  );
+  hover(false);
+  assert.deepStrictEqual(
+    win.calls.setIgnoreMouseEvents[2],
+    [true, { forward: true }],
+    'and back off when the pointer leaves it'
+  );
 
   const action = (reason) => electronState.ipcHandlers['clowk-action'](null, reason);
 
@@ -140,6 +188,35 @@ function cleanup() {
   assert.strictEqual(electronState.quitCalls, 1, 'shutdown quits the app exactly once');
   // nothing else is touched: no exec/kill of any terminal, IDE, or agent —
   // the main process has no code path that does so (see no-browser-static).
+
+  // --- a lost frontmost capability is reported, never silently swallowed --------
+  const setupWindowsBefore = electronState.windows.length;
+  front.current = null;
+  for (let i = 0; i < 3; i++) await main._test.pollFrontmost();
+  const compat = main._test.getCompatMessage();
+  assert.ok(compat, 'a frontmost probe that stops answering produces a compatibility message');
+  assert.ok(/Automation/.test(compat), 'the macOS message names the permission to grant');
+  assert.ok(
+    electronState.windows.length > setupWindowsBefore,
+    'the compatibility message gets a window to appear in — the app is not mute'
+  );
+  const reopened = electronState.windows[electronState.windows.length - 1];
+  assert.ok(
+    reopened.calls.loadFile[0][0].endsWith(path.join('electron', 'setup.html')),
+    'the surfaced window is the native setup window, never a browser page'
+  );
+  const compatState = await electronState.ipcInvokeHandlers['setup:state'](null);
+  assert.strictEqual(compatState.compatMessage, compat, 'setup reads the runtime compatibility message');
+  assert.strictEqual(compatState.running, true, 'setup knows the app is already running');
+
+  front.current = 'Terminal';
+  await main._test.pollFrontmost();
+  assert.strictEqual(main._test.getCompatMessage(), null, 'a probe that recovers clears the message');
+
+  // --- Quit from setup: the way out when no intervention ever arrives -----------
+  await electronState.ipcInvokeHandlers['setup:quit'](null);
+  assert.strictEqual(electronState.quitCalls, 2, 'Quit quits Open Clowk');
+  assert.strictEqual(reminder.state, 'stopped', 'Quit stops the reminder');
 
   // --- no forbidden module loads through the whole cycle ------------------------
   assert.deepStrictEqual(

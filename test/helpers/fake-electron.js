@@ -23,6 +23,8 @@ function installFakeElectron() {
     loginItemCalls: [],
     forbiddenRequires: [],
     quitCalls: 0,
+    singleInstanceLockCalls: 0,
+    singleInstanceLockGranted: true,
     ipcHandlers: {},
     ipcInvokeHandlers: {},
     appEvents: {},
@@ -31,9 +33,18 @@ function installFakeElectron() {
   class FakeBrowserWindow {
     constructor(opts) {
       this.opts = opts;
-      this.calls = { setAlwaysOnTop: [], setVisibleOnAllWorkspaces: [], loadFile: [] };
+      this.calls = {
+        setAlwaysOnTop: [],
+        setVisibleOnAllWorkspaces: [],
+        setIgnoreMouseEvents: [],
+        loadFile: [],
+        focus: 0,
+        show: 0,
+        restore: 0,
+      };
       this.handlers = {};
       this.closed = false;
+      this.minimized = false;
       state.windows.push(this);
     }
     setAlwaysOnTop(...args) {
@@ -41,6 +52,22 @@ function installFakeElectron() {
     }
     setVisibleOnAllWorkspaces(...args) {
       this.calls.setVisibleOnAllWorkspaces.push(args);
+    }
+    setIgnoreMouseEvents(...args) {
+      this.calls.setIgnoreMouseEvents.push(args);
+    }
+    focus() {
+      this.calls.focus++;
+    }
+    show() {
+      this.calls.show++;
+    }
+    restore() {
+      this.minimized = false;
+      this.calls.restore++;
+    }
+    isMinimized() {
+      return this.minimized;
     }
     loadFile(...args) {
       this.calls.loadFile.push(args);
@@ -58,6 +85,10 @@ function installFakeElectron() {
   const fakeElectron = {
     app: {
       whenReady: () => Promise.resolve(),
+      requestSingleInstanceLock: () => {
+        state.singleInstanceLockCalls++;
+        return state.singleInstanceLockGranted;
+      },
       setLoginItemSettings: (settings) => state.loginItemCalls.push(settings),
       on: (event, cb) => {
         state.appEvents[event] = cb;

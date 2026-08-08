@@ -113,19 +113,33 @@ function hostTargets(platform) {
   return TARGETS.filter((t) => t.kind === 'app' && t.platforms.includes(platform));
 }
 
+/* Hosts an agent target may be spotted inside. Codex/Claude have no window of
+ * their own, so they are matched through a host app. The user's host choices
+ * win: selecting Claude Code + VS Code means VS Code only, never every
+ * supported terminal. Selecting an agent with no host at all still has to
+ * work, so that case falls back to the supported hosts for the platform. */
+function agentHostTargets(selected, platform) {
+  const chosen = selected
+    .map((id) => getTarget(id))
+    .filter((t) => t && t.kind === 'app' && t.platforms.includes(platform));
+  return chosen.length ? chosen : hostTargets(platform);
+}
+
 /* Does `frontmost` (a native app identity string) satisfy any selected
  * target, given `execRunning(name)` — an executable-NAME-only check? */
 function matchFrontmost({ frontmost, selected, platform, execRunning }) {
   const front = normalizeName(frontmost);
   if (!front) return false;
-  for (const id of selected) {
+  const selectedIds = Array.isArray(selected) ? selected : [];
+  const agentHosts = agentHostTargets(selectedIds, platform);
+  for (const id of selectedIds) {
     const target = getTarget(id);
     if (!target || !target.platforms.includes(platform)) continue;
     if (target.kind === 'app') {
       if (targetNames(target).includes(front)) return true;
     } else {
-      // agent target: any supported host app frontmost + the agent executable running
-      const hostFrontmost = hostTargets(platform).some((h) => targetNames(h).includes(front));
+      // agent target: a selected host app frontmost + the agent executable running
+      const hostFrontmost = agentHosts.some((h) => targetNames(h).includes(front));
       if (hostFrontmost && (target.exeNames || []).some((exe) => execRunning(normalizeName(exe)))) {
         return true;
       }
@@ -134,12 +148,22 @@ function matchFrontmost({ frontmost, selected, platform, execRunning }) {
   return false;
 }
 
+/* Interval bounds. This is the real trust boundary: the setup window's input
+ * attributes are cosmetic, and ~/.open-clowk/prefs.json is a hand-editable
+ * file. Anything below a whole minute turns the mascot into a strobe, and
+ * anything past 2^31-1 milliseconds silently collapses setTimeout to 1ms —
+ * which fires the overlay immediately, forever. */
+const MIN_MINUTES = 1;
+const MAX_MINUTES = 24 * 60;
+
 /* Validate setup preferences. Returns { ok, errors, prefs }. */
 function validatePrefs(input) {
   const errors = [];
   const minutes = Number(input && input.minutes);
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    errors.push('interval must be a positive number of minutes');
+  if (!Number.isInteger(minutes) || minutes < MIN_MINUTES || minutes > MAX_MINUTES) {
+    errors.push(
+      `interval must be a whole number of minutes between ${MIN_MINUTES} and ${MAX_MINUTES}`
+    );
   }
   const selected = Array.isArray(input && input.targets) ? input.targets : [];
   if (selected.length === 0) {
@@ -187,4 +211,13 @@ function detectTargets({ platform, probes }) {
   });
 }
 
-module.exports = { TARGETS, getTarget, matchFrontmost, validatePrefs, detectTargets, normalizeName };
+module.exports = {
+  TARGETS,
+  getTarget,
+  matchFrontmost,
+  validatePrefs,
+  detectTargets,
+  normalizeName,
+  MIN_MINUTES,
+  MAX_MINUTES,
+};

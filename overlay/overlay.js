@@ -209,7 +209,44 @@ function act(reason) {
   if (window.clowk) window.clowk.action(reason);
 }
 
+/* ---------- hit-testing: the window is display-sized, the mascot is not ----------
+ * The main process keeps the overlay click-through and only hit-tests while the
+ * pointer is over the message box, so the empty pixels never swallow a click. */
+let interactive = false;
+
+function setInteractive(next) {
+  if (next === interactive) return;
+  interactive = next;
+  if (window.clowk && window.clowk.setInteractive) window.clowk.setInteractive(next);
+}
+
+function overBubble(x, y) {
+  const bubble = document.getElementById('bubble');
+  if (!bubble || bubble.hidden) return false;
+  const r = bubble.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+document.addEventListener('mousemove', (e) => setInteractive(overBubble(e.clientX, e.clientY)));
+
+/* ---------- actions ---------- */
+let breaking = false;
+let breakTick = null;
+
+/* Escape is the escape hatch, available for the whole intervention: during the
+ * ~12s walk-in the buttons do not exist yet, and during the five-minute break
+ * they are hidden. It resolves the action already in progress — no fourth
+ * intent reaches the main process. */
+function dismiss() {
+  if (breakTick) {
+    clearInterval(breakTick);
+    breakTick = null;
+  }
+  act(breaking ? 'break' : 'ignore');
+}
+
 function startBreak() {
+  breaking = true;
   document.querySelector('.bubble-buttons').hidden = true;
   const el = document.getElementById('countdown');
   el.hidden = false;
@@ -217,13 +254,14 @@ function startBreak() {
   const render = () => {
     const m = Math.floor(left / 60);
     const s = String(left % 60).padStart(2, '0');
-    el.textContent = `Break — the clocks stay open. Back in ${m}:${s}`;
+    el.textContent = `Break — the clocks stay open. Back in ${m}:${s} · Esc ends it now`;
   };
   render();
-  const tick = setInterval(() => {
+  breakTick = setInterval(() => {
     left -= 1;
     if (left <= 0) {
-      clearInterval(tick);
+      clearInterval(breakTick);
+      breakTick = null;
       act('break');
       return;
     }
@@ -234,5 +272,8 @@ function startBreak() {
 document.getElementById('btn-break').addEventListener('click', startBreak);
 document.getElementById('btn-ignore').addEventListener('click', () => act('ignore'));
 document.getElementById('btn-shutdown').addEventListener('click', () => act('shutdown'));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') dismiss();
+});
 
 scene();

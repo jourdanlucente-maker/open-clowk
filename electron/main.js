@@ -24,11 +24,23 @@ const path = require('path');
 
 const adapters = require('./adapters');
 const { createReminder } = require('./reminder');
-const { validatePrefs, detectTargets, matchFrontmost } = require('./targets');
+const {
+  validatePrefs,
+  detectTargets,
+  matchFrontmost,
+  getTarget,
+  MIN_MINUTES,
+  MAX_MINUTES,
+} = require('./targets');
 
 const DEFAULT_MINUTES = 30;
 const PREFS_DIR = path.join(os.homedir(), '.open-clowk');
 const PREFS_FILE = path.join(PREFS_DIR, 'prefs.json');
+
+// Consecutive failed frontmost probes before the compatibility message is
+// surfaced. At a 2s poll this is ~6s — long enough to ride out one slow probe,
+// short enough that a denied permission never fails silently forever.
+const FRONTMOST_FAILURES_BEFORE_COMPAT = 3;
 
 let adapter = null; // created lazily so tests can inject fixtures
 let reminder = null;
@@ -82,6 +94,12 @@ async function detect() {
 /* ---------- windows ---------- */
 
 function showSetup() {
+  if (setupWindow) {
+    if (setupWindow.isMinimized && setupWindow.isMinimized()) setupWindow.restore();
+    if (setupWindow.show) setupWindow.show();
+    if (setupWindow.focus) setupWindow.focus();
+    return;
+  }
   setupWindow = new BrowserWindow({
     width: 520,
     height: 660,
@@ -123,6 +141,12 @@ function showOverlay() {
 
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // The overlay is display-sized but mostly empty pixels. Stay click-through by
+  // default (forwarding moves so the renderer can still track the pointer); the
+  // renderer re-enables hit-testing only while the pointer is over the message
+  // box. Without this the mascot swallows every click on the display, including
+  // the ~12s walk-in and the whole five-minute break countdown.
+  setOverlayInteractive(false);
   overlayWindow.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), {
     query: { interval: String(prefs.minutes) },
   });
@@ -133,6 +157,12 @@ function showOverlay() {
     // the interval re-arms exactly like a dismissal.
     if (reminder) reminder.resolve('closed');
   });
+}
+
+function setOverlayInteractive(interactive) {
+  if (!overlayWindow || !overlayWindow.setIgnoreMouseEvents) return;
+  if (interactive) overlayWindow.setIgnoreMouseEvents(false);
+  else overlayWindow.setIgnoreMouseEvents(true, { forward: true });
 }
 
 function handleOverlayAction(reason) {
@@ -174,7 +204,13 @@ async function launch(input) {
   prefs = result.prefs;
   savePrefs(prefs);
   launched = true;
+  frontmostFailures = 0;
+  runtimeCompatMessage = null;
 
+  // Prime the executable-name cache only when an agent target actually needs it.
+  if (hasAgentTarget()) await refreshExecRunning();
+
+  if (reminder) reminder.stop();
   reminder = createReminder({
     checkFrontmost: () => pendingFrontmostMatch,
     onIntervene: showOverlay,
@@ -192,56 +228,141 @@ async function launch(input) {
 // Set synchronously by the frontmost poller; the reminder reads it when an
 // interval elapses and while an intervention is pending.
 let pendingFrontmostMatch = false;
+let frontmostPollInFlight = false;
+let frontmostFailures = 0;
+let runtimeCompatMessage = null;
+
+/* A null/throwing probe is a lost capability, not "your target is elsewhere".
+ * Denied macOS Automation consent returns null forever, so collapsing both
+ * cases to `false` would leave the app running windowless and mute. */
+function noteFrontmostProbeFailure() {
+  pendingFrontmostMatch = false;
+  frontmostFailures += 1;
+  if (frontmostFailures < FRONTMOST_FAILURES_BEFORE_COMPAT || runtimeCompatMessage) return;
+  const a = getAdapter();
+  runtimeCompatMessage =
+    a.frontmostFailureMessage ||
+    `Open Clowk cannot read the frontmost application on ${a.platform}. No intervention ` +
+      'can appear until it succeeds; there is no browser or global fallback.';
+  console.log(`[open-clowk] ${runtimeCompatMessage}`);
+  showSetup();
+}
 
 async function pollFrontmost() {
-  if (!launched || !reminder) return;
+  if (!launched || !reminder || frontmostPollInFlight) return;
+  // Probes are given up to 4s; without this guard a slow one lets polls pile up.
+  frontmostPollInFlight = true;
   try {
-    const front = await getAdapter().frontmost();
+    const a = getAdapter();
+    const front = await a.frontmost();
+    if (!front) {
+      noteFrontmostProbeFailure();
+      return;
+    }
+    frontmostFailures = 0;
+    runtimeCompatMessage = null;
     pendingFrontmostMatch = matchFrontmost({
       frontmost: front,
       selected: prefs.targets,
-      platform: getAdapter().platform,
+      platform: a.platform,
       execRunning: (name) => cachedExecRunning[name] === true,
     });
   } catch (e) {
-    pendingFrontmostMatch = false;
+    noteFrontmostProbeFailure();
+  } finally {
+    frontmostPollInFlight = false;
   }
 }
 
 const cachedExecRunning = {};
+let execPollInFlight = false;
+
+function hasAgentTarget() {
+  return prefs.targets.some((id) => {
+    const t = getTarget(id);
+    return !!t && t.kind === 'agent';
+  });
+}
+
 async function refreshExecRunning() {
-  for (const name of ['codex', 'claude']) {
-    cachedExecRunning[name] = await getAdapter().execRunning(name);
+  if (execPollInFlight) return;
+  execPollInFlight = true;
+  try {
+    const a = getAdapter();
+    for (const name of ['codex', 'claude']) {
+      cachedExecRunning[name] = await a.execRunning(name);
+    }
+  } catch (e) {
+    // name-only probes are best effort; a failure just means "not running"
+  } finally {
+    execPollInFlight = false;
   }
+}
+
+/* Spawning pgrep/tasklist forever costs the user battery for nothing when no
+ * agent target is selected — and before Launch there is nothing to watch. */
+async function refreshExecRunningIfWatched() {
+  if (!launched || !hasAgentTarget()) return;
+  await refreshExecRunning();
 }
 
 /* ---------- wiring ---------- */
 
 ipcMain.handle('setup:state', async () => {
   const d = await detect();
-  return { ...d, defaults: { minutes: DEFAULT_MINUTES }, saved: loadPrefs() };
+  return {
+    ...d,
+    defaults: { minutes: DEFAULT_MINUTES, minMinutes: MIN_MINUTES, maxMinutes: MAX_MINUTES },
+    saved: loadPrefs(),
+    running: launched,
+    compatMessage: runtimeCompatMessage,
+  };
 });
 
 ipcMain.handle('setup:launch', (_event, input) => launch(input));
 
+// Quits Open Clowk only — the same boundary as the overlay's Shut down. It is
+// the way out once the app is running windowless.
+ipcMain.handle('setup:quit', () => {
+  if (reminder) reminder.stop();
+  if (overlayWindow) overlayWindow.close();
+  app.quit();
+  return { ok: true };
+});
+
 ipcMain.on('clowk-action', (_event, reason) => handleOverlayAction(reason));
 
-app.whenReady().then(async () => {
-  console.log('[open-clowk] timed terminal mascot. It reads app names, nothing else.');
-  const a = getAdapter();
-  if (!a.supported) console.log(`[open-clowk] ${a.message}`);
-  prefs = loadPrefs();
-  showSetup();
-  await refreshExecRunning();
-  setInterval(pollFrontmost, 2000);
-  setInterval(refreshExecRunning, 5000);
-});
+ipcMain.on('clowk-interactive', (_event, interactive) => setOverlayInteractive(!!interactive));
 
-app.on('window-all-closed', () => {
-  // Before Launch, closing setup ends the app. After Launch the reminder runs
-  // windowless until an intervention or Shut down.
-  if (!launched) app.quit();
-});
+// A second launch must not mean a second timer, a second pair of pollers, and a
+// second display-sized overlay stacked on the first — it reopens this one's setup.
+const gotSingleInstanceLock =
+  typeof app.requestSingleInstanceLock === 'function' ? app.requestSingleInstanceLock() : true;
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => showSetup());
+
+  app.whenReady().then(() => {
+    console.log('[open-clowk] timed terminal mascot. It reads app names, nothing else.');
+    const a = getAdapter();
+    if (!a.supported) console.log(`[open-clowk] ${a.message}`);
+    prefs = loadPrefs();
+    showSetup();
+    setInterval(pollFrontmost, 2000);
+    setInterval(refreshExecRunningIfWatched, 5000);
+  });
+
+  // Reopening from the dock/taskbar is the other way back to settings and Quit.
+  app.on('activate', () => showSetup());
+
+  app.on('window-all-closed', () => {
+    // Before Launch, closing setup ends the app. After Launch the reminder runs
+    // windowless until an intervention, Shut down, or Quit from setup.
+    if (!launched) app.quit();
+  });
+}
 
 // Acceptance-test hook: lets the suite drive setup/launch/intervention with an
 // injected (fake) Electron and adapter fixtures. No effect under the real app.
@@ -257,5 +378,9 @@ module.exports = {
       pendingFrontmostMatch = v;
     },
     getReminder: () => reminder,
+    pollFrontmost,
+    refreshExecRunningIfWatched,
+    getCompatMessage: () => runtimeCompatMessage,
+    setOverlayInteractive,
   },
 };

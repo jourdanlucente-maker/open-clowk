@@ -18,6 +18,26 @@ const WAYLAND_MESSAGE =
   'Only X11 sessions are supported in this first cut. No browser or global fallback exists — ' +
   'the reminder simply will not arm here.';
 
+/* A `frontmost()` of null means the probe itself failed — the capability is
+ * missing or refused, which is not the same as "your target is not in front".
+ * Consent can also be revoked long after launch, so these stay reachable at
+ * runtime, not just during detection. */
+const FRONTMOST_FAILED = {
+  darwin:
+    'Open Clowk cannot read the frontmost application name on macOS. This usually means ' +
+    'Automation access for System Events was denied or revoked — grant it under System ' +
+    'Settings › Privacy & Security › Automation, then Launch again. Until it succeeds no ' +
+    'intervention can appear; there is no browser or global fallback.',
+  win32:
+    'Open Clowk cannot read the frontmost process name on this Windows session. PowerShell ' +
+    'may be unavailable or blocked by execution policy. Until it succeeds no intervention ' +
+    'can appear; there is no browser or global fallback.',
+  linux:
+    'Open Clowk cannot read the frontmost window owner on this X11 session. `xprop` may be ' +
+    'missing, or the window manager may not publish _NET_ACTIVE_WINDOW. Until it succeeds no ' +
+    'intervention can appear; there is no browser or global fallback.',
+};
+
 function run(exec, file, args) {
   return new Promise((resolve) => {
     exec(file, args, { timeout: 4000 }, (err, stdout) => {
@@ -31,6 +51,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
     return {
       platform,
       supported: true,
+      frontmostFailureMessage: FRONTMOST_FAILED.darwin,
       // Automation consent (one-time) for System Events; returns the app NAME only.
       async frontmost() {
         return run(exec, 'osascript', [
@@ -55,6 +76,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
     return {
       platform,
       supported: true,
+      frontmostFailureMessage: FRONTMOST_FAILED.win32,
       // GetForegroundWindow -> PID -> Process NAME only. Never the window title.
       async frontmost() {
         const script = [
@@ -83,6 +105,7 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
     return {
       platform,
       supported: true,
+      frontmostFailureMessage: FRONTMOST_FAILED.linux,
       // X11: active window -> its PID -> /proc/<pid>/comm (executable name only).
       async frontmost() {
         const active = await run(exec, 'xprop', ['-root', '_NET_ACTIVE_WINDOW']);
@@ -113,4 +136,4 @@ function createAdapter({ platform = process.platform, env = process.env, exec = 
   };
 }
 
-module.exports = { createAdapter, WAYLAND_MESSAGE };
+module.exports = { createAdapter, WAYLAND_MESSAGE, FRONTMOST_FAILED };
