@@ -245,4 +245,17 @@ app.on('window-all-closed', () => {
 
 // Acceptance-test hook: lets the suite drive setup/launch/intervention with an
 // injected (fake) Electron and adapter fixtures. No effect under the real app.
-module.exports = { showSetup, showOverlay, launch, handleOverlayAction, loadPrefs, DEFAULT_MINUTES };
+module.exports = {
+  showSetup,
+  showOverlay,
+  launch,
+  handleOverlayAction,
+  loadPrefs,
+  DEFAULT_MINUTES,
+  _test: {
+    setFrontmostMatch: (v) => {
+      pendingFrontmostMatch = v;
+    },
+    getReminder: () => reminder,
+  },
+};

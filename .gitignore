@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+test/.tmp-home-*/
+assets/*.png
+assets/*.webp
