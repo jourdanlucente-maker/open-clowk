@@ -48,10 +48,20 @@ fallback/preview is a build failure — `test/no-browser-static.test.js` and
   WebP). Point to it; do not restate it.
 - `npm test` must stay headless and deterministic: no real window, socket,
   screen/audio capture, or permission prompts. Windows/Linux adapters are
-  fixture-tested only — never claim real runtime proof there.
-- Do not publish, package, sign, or release anything. Never rewrite `main`,
-  touch obsolete PR #1 or the archive refs (pinned in `MIGRATION.md`), and
-  never mutate the read-only source repo `JEAN-MICHEL-REPOS`.
+  fixture-tested only — never claim real runtime proof there. It has one
+  test-only prerequisite, **Python 3 (stdlib `pty`, no native package)**: the
+  installer's `/dev/tty` Homebrew consent is covered through a real
+  pseudo-terminal (`test/helpers/pty-session.py`). Never weaken that to a
+  regular file, FIFO, or env override, and never skip it — the app's own
+  runtime and `install.sh` stay Node-only.
+- Developer source distribution from the public repository is accepted; the
+  reviewed path and its contract live in `README.md` and `install.sh`. Binary
+  packaging/signing/notarization, npm publication, GitHub binary releases,
+  sprite publication/redistribution, launch at login, and broader release work
+  remain separately unauthorized. Never rewrite `main`, touch obsolete PR #1
+  or the archive refs (pinned in `MIGRATION.md`), or mutate the read-only source
+  repo `JEAN-MICHEL-REPOS`. `assets/README.md` remains the sole sprite-policy
+  owner.
 
 ## Maintaining this file
 
