@@ -5,7 +5,6 @@ set -euo pipefail
 REPO_URL="https://github.com/jourdanlucente-maker/open-clowk.git"
 ARCHIVE_URL="https://github.com/jourdanlucente-maker/open-clowk/archive/refs/heads/main.tar.gz"
 SOURCE_DIR="${OPEN_CLOWK_SOURCE_DIR:-${HOME}/.local/share/open-clowk/source}"
-TTY_PATH="${OPEN_CLOWK_TTY_PATH:-/dev/tty}"
 
 say() {
   printf '%s\n' "$*"
@@ -27,12 +26,16 @@ node_major() {
 
 offer_brew_node() {
   command -v brew >/dev/null 2>&1 || return 1
-  [ -r "$TTY_PATH" ] && [ -w "$TTY_PATH" ] || return 1
+  if { exec 3<>/dev/tty; } 2>/dev/null && [ -t 3 ]; then
+    say "Homebrew is already installed. Open Clowk can ask it to install Node.js."
+  else
+    return 1
+  fi
 
-  say "Homebrew is already installed. Open Clowk can ask it to install Node.js."
   local answer=""
-  printf 'Run brew install node now? [y/N] ' >>"$TTY_PATH"
-  IFS= read -r answer <"$TTY_PATH" || answer=""
+  printf 'Run brew install node now? [y/N] ' >&3
+  IFS= read -r answer <&3 || answer=""
+  exec 3>&-
   case "$answer" in
     y|Y|yes|YES|Yes)
       local brew_status=0

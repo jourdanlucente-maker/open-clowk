@@ -48,8 +48,28 @@ function fixture(options = {}) {
   return { root, bin, destination, log, env };
 }
 
+/* `detached` puts the child in its own session with no controlling terminal, so
+ * a non-pty scenario can never reach — or block on — the developer's own tty. */
 function run(f, extra = {}) {
-  return spawnSync('/bin/bash', [script], { env: { ...f.env, ...extra }, encoding: 'utf8' });
+  return spawnSync('/bin/bash', [script], {
+    env: { ...f.env, ...extra }, encoding: 'utf8', detached: true,
+  });
+}
+
+const ptySession = path.join(__dirname, 'helpers', 'pty-session.py');
+const BREW_PROMPT = 'Run brew install node now? [y/N]';
+
+/* Answers the real /dev/tty prompt over a real pseudo-terminal. stdout and
+ * stderr are one stream on a tty, so scenarios assert against `output`. */
+function runOnPty(f, answer, extra = {}) {
+  const envFile = path.join(f.root, 'pty-env.json');
+  const outFile = path.join(f.root, 'pty-output.txt');
+  fs.writeFileSync(envFile, JSON.stringify({ ...f.env, ...extra }));
+  const result = spawnSync('python3',
+    [ptySession, envFile, outFile, BREW_PROMPT, answer, '/bin/bash', script],
+    { encoding: 'utf8', detached: true });
+  assert.notStrictEqual(result.status, 99, 'the installer never printed the Homebrew prompt on the pty');
+  return { status: result.status, output: fs.readFileSync(outFile, 'utf8') };
 }
 
 function commands(f) {
@@ -58,9 +78,15 @@ function commands(f) {
 
 try {
   {
+    const probe = spawnSync('python3', ['-c', 'import pty'], { encoding: 'utf8' });
+    assert.strictEqual(probe.status, 0,
+      'python3 with the pty module is required to exercise the real Homebrew consent terminal');
+  }
+  {
     const source = fs.readFileSync(script, 'utf8');
-    assert.doesNotMatch(source, /OPEN_CLOWK_TESTING|OPEN_CLOWK_TEST_CONFIRM/,
-      'install.sh must not carry an environment hook that bypasses the brew confirmation');
+    assert.doesNotMatch(source, /OPEN_CLOWK_TESTING|OPEN_CLOWK_TEST_CONFIRM|OPEN_CLOWK_TTY_PATH/,
+      'install.sh must not carry an environment override for the Homebrew confirmation terminal');
+    assert.match(source, /\/dev\/tty/, 'Homebrew consent must be read from /dev/tty');
     assert.doesNotMatch(source, /sudo|nvm|curl[^\n]*\|\s*(ba)?sh|npm (install|i) -g|\.(bash|zsh)(rc|_profile)/);
   }
   {
@@ -129,51 +155,45 @@ try {
   }
   {
     const f = fixture({ node: false, brew: true });
-    const result = run(f, { OPEN_CLOWK_TTY_PATH: path.join(f.root, 'missing-tty') });
+    const result = run(f);
     assert.notStrictEqual(result.status, 0);
     assert.match(result.stderr, /No system packages were changed/);
+    assert.doesNotMatch(result.stdout, /Run brew install node now/);
     assert.doesNotMatch(commands(f), /brew install/);
   }
   {
     const f = fixture({ node: false, brew: true });
-    const tty = path.join(f.root, 'tty');
-    fs.writeFileSync(tty, 'n\n');
-    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty });
-    assert.notStrictEqual(result.status, 0);
-    assert.match(result.stderr, /declined/);
-    assert.doesNotMatch(commands(f), /brew install/);
-    assert.match(fs.readFileSync(tty, 'utf8'), /Run brew install node now\? \[y\/N\]/);
-  }
-  {
-    const f = fixture({ node: false, brew: true });
-    const tty = path.join(f.root, 'tty');
-    fs.writeFileSync(tty, '\n');
-    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty });
-    assert.notStrictEqual(result.status, 0);
-    assert.match(result.stderr, /declined/);
+    const { status, output } = runOnPty(f, 'n\n');
+    assert.notStrictEqual(status, 0);
+    assert.match(output, /Run brew install node now\? \[y\/N\]/);
+    assert.match(output, /declined/);
     assert.doesNotMatch(commands(f), /brew install/);
   }
   {
     const f = fixture({ node: false, brew: true });
-    const tty = path.join(f.root, 'tty');
-    fs.writeFileSync(tty, 'y\n');
+    const { status, output } = runOnPty(f, '\n');
+    assert.notStrictEqual(status, 0);
+    assert.match(output, /declined/);
+    assert.doesNotMatch(commands(f), /brew install/);
+  }
+  {
+    const f = fixture({ node: false, brew: true });
     const after = path.join(f.root, 'node-after-brew');
     executable(after, 'case "${1:-}" in -p) echo 22;; --version) echo v22.0.0;; esac');
-    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty, FAKE_NODE_AFTER_BREW: after });
-    assert.strictEqual(result.status, 0, result.stderr);
+    const { status, output } = runOnPty(f, 'y\n', { FAKE_NODE_AFTER_BREW: after });
+    assert.strictEqual(status, 0, output);
+    assert.match(output, /Run brew install node now\? \[y\/N\]/);
     assert.match(commands(f), /brew install node/);
-    assert.match(fs.readFileSync(tty, 'utf8'), /Run brew install node now\? \[y\/N\]/);
+    assert.match(commands(f), /npm ci\nnpm start/);
   }
   {
     const f = fixture({ node: false, brew: true });
-    const tty = path.join(f.root, 'tty');
-    fs.writeFileSync(tty, 'y\n');
-    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty, FAKE_BREW_EXIT: '3' });
-    assert.notStrictEqual(result.status, 0);
+    const { status, output } = runOnPty(f, 'y\n', { FAKE_BREW_EXIT: '3' });
+    assert.notStrictEqual(status, 0);
     assert.match(commands(f), /brew install node/);
-    assert.match(result.stderr, /brew install node failed with exit status 3/);
-    assert.match(result.stderr, /system packages may have changed/);
-    assert.doesNotMatch(result.stderr, /No system packages were changed/);
+    assert.match(output, /brew install node failed with exit status 3/);
+    assert.match(output, /system packages may have changed/);
+    assert.doesNotMatch(output, /No system packages were changed/);
     assert.doesNotMatch(commands(f), /npm ci/);
   }
   for (const origin of [
