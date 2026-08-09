@@ -13,33 +13,130 @@ shareable social link is the public repository itself:
 
 **https://github.com/jourdanlucente-maker/open-clowk**
 
-You need macOS or Linux/X11, Node.js 18 or newer, npm, and a terminal. The
-installer validates these prerequisites before installing dependencies. It
-does not use `sudo`, install a package manager, create a global npm install,
-add login persistence, or hide the commands it runs.
+The flow below is intentionally numbered: install the prerequisites, verify
+them, then obtain Open Clowk, install its dependencies, and launch it. You
+need macOS or Linux/X11 and a terminal. Open Clowk requires **Node.js 18 or
+newer**. A normal Node.js installation includes **npm**; do not install either
+one with `npm install -g`.
 
-### Transparent manual install
+### 1. Install Git and Node.js first
 
-With Git installed:
+Open Clowk's installer does **not** install Git, Homebrew, a Linux package
+manager, or other system prerequisites. Choose the instructions for your
+platform before running any Open Clowk command.
+
+#### macOS
+
+If Homebrew is **already installed**, use it for both prerequisites:
+
+```sh
+brew install git node
+```
+
+If Homebrew is not installed, do not install it from a shell script. Install
+Git with Apple's official Command Line Tools, then install the current Node.js
+LTS release from the [official Node.js download page](https://nodejs.org/en/download):
+
+```sh
+xcode-select --install
+```
+
+The Node.js installer includes npm. Git is also available from the [official
+Git for macOS download page](https://git-scm.com/download/mac) if you prefer
+it to Apple's Command Line Tools. Open Clowk does not install Homebrew for you.
+
+#### Linux/X11
+
+Use the package commands for your distribution; these examples are not
+interchangeable:
+
+**Debian or Ubuntu:**
+
+```sh
+sudo apt update
+sudo apt install git nodejs npm
+```
+
+**Fedora or a compatible distribution using `dnf`:**
+
+```sh
+sudo dnf install git nodejs npm
+```
+
+**Arch Linux:**
+
+```sh
+sudo pacman -Syu --needed git nodejs npm
+```
+
+Some Linux distribution repositories provide a Node.js version older than 18.
+The commands above do not promise compatibility. If your version check below
+shows a release older than 18, **stop** and install a current release using
+the [official Node.js download page](https://nodejs.org/en/download), then
+run the checks again. On Linux, a distribution package may list `npm`
+separately even though npm is bundled with a normal upstream Node.js
+installation.
+
+### 2. Verify the prerequisites
+
+Run all three version checks. Do not continue until Git works, npm works, and
+Node.js reports v18 or newer:
+
+```sh
+git --version
+node --version
+npm --version
+node -e 'const major = Number(process.versions.node.split(".")[0]); if (major < 18) { console.error("Stop: Open Clowk requires Node.js 18 or newer."); process.exit(1); }'
+```
+
+If any command fails, or the last command exits with an error, fix the
+prerequisite installation before continuing. This guide does not support
+`npm install -g open-clowk`; there is no published npm package.
+
+### 3. Obtain Open Clowk
+
+Now choose one source path. The normal Git path is:
 
 ```sh
 git clone https://github.com/jourdanlucente-maker/open-clowk.git
 cd open-clowk
-node --version  # must be v18 or newer
-npm --version
-npm ci
-npm start
 ```
 
-Without Git, download the official
-[`main` source archive](https://github.com/jourdanlucente-maker/open-clowk/archive/refs/heads/main.tar.gz),
-unpack it, enter the extracted `open-clowk-main` directory, verify Node/npm as
-above, then run `npm ci` and `npm start`.
+If Git is unavailable, the source-archive fallback remains available. Download
+the official [`main` source archive](https://github.com/jourdanlucente-maker/open-clowk/archive/refs/heads/main.tar.gz),
+unpack it, and enter the extracted directory:
+
+```sh
+curl -fL https://github.com/jourdanlucente-maker/open-clowk/archive/refs/heads/main.tar.gz -o /tmp/open-clowk-main.tar.gz
+tar -xzf /tmp/open-clowk-main.tar.gz
+cd open-clowk-main
+```
+
+The fallback still requires Node.js 18+ and npm. It also requires the `curl`
+and `tar` commands supplied by your operating system.
+
+### 4. Install dependencies
+
+From the Open Clowk source directory, run:
+
+```sh
+npm ci
+```
+
+### 5. Launch Open Clowk
+
+After `npm ci` completes successfully, launch the native app with:
+
+```sh
+npm start
+```
 
 ### Reviewed installer: inspect first
 
 The safer convenience path downloads the repository's [`install.sh`](install.sh)
-so you can read the exact script before running it:
+so you can read the exact script before running it. Complete steps 1 and 2
+above first; the script does not install Git, Homebrew, a Linux package
+manager, or other system prerequisites:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jourdanlucente-maker/open-clowk/main/install.sh -o /tmp/open-clowk-install.sh
@@ -58,9 +155,13 @@ The script uses Git when available. Without Git it downloads GitHub's official
 `main` source archive with `curl`. It validates Node 18+ and npm first, runs
 `npm ci`, then launches an attached `npm start`; closing the app or pressing
 Ctrl-C returns control to that terminal. Every consequential command is shown
-before it runs.
+before it runs. If Node.js is missing or too old, it may offer an already
+installed Homebrew a `brew install node` action on macOS; it never installs
+Homebrew or any other system prerequisite itself.
 
 ### Fast path (`curl | bash`)
+
+Complete steps 1 and 2 first, then run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jourdanlucente-maker/open-clowk/main/install.sh | bash
