@@ -18,6 +18,7 @@ const TESTS = [
   'overlay-dom.test.js',
   'no-browser-static.test.js',
   'cli-version.test.js',
+  'install-script.test.js',
 ];
 
 let failed = 0;

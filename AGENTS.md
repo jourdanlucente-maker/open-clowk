@@ -49,9 +49,14 @@ fallback/preview is a build failure — `test/no-browser-static.test.js` and
 - `npm test` must stay headless and deterministic: no real window, socket,
   screen/audio capture, or permission prompts. Windows/Linux adapters are
   fixture-tested only — never claim real runtime proof there.
-- Do not publish, package, sign, or release anything. Never rewrite `main`,
-  touch obsolete PR #1 or the archive refs (pinned in `MIGRATION.md`), and
-  never mutate the read-only source repo `JEAN-MICHEL-REPOS`.
+- Developer source distribution from the public repository is accepted; the
+  reviewed path and its contract live in `README.md` and `install.sh`. Binary
+  packaging/signing/notarization, npm publication, GitHub binary releases,
+  sprite publication/redistribution, launch at login, and broader release work
+  remain separately unauthorized. Never rewrite `main`, touch obsolete PR #1
+  or the archive refs (pinned in `MIGRATION.md`), or mutate the read-only source
+  repo `JEAN-MICHEL-REPOS`. `assets/README.md` remains the sole sprite-policy
+  owner.
 
 ## Maintaining this file
 
