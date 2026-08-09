@@ -79,21 +79,26 @@ into your home directory and put it ahead of the distribution copy on your
 `PATH`:
 
 ```sh
+ls ~/Downloads/node-v*-linux-*.tar.xz
+NODE_TARBALL="$HOME/Downloads/REPLACE-WITH-THE-FILE-NAME-LISTED-ABOVE"
 mkdir -p ~/.local/node
-tar -xJf ~/Downloads/node-v*-linux-*.tar.xz -C ~/.local/node --strip-components=1
-echo 'export PATH="$HOME/.local/node/bin:$PATH"' >> ~/.bashrc
+tar -xJf "$NODE_TARBALL" -C ~/.local/node --strip-components=1
+grep -qF '.local/node/bin' ~/.bashrc 2>/dev/null || printf '\n%s\n' 'export PATH="$HOME/.local/node/bin:$PATH"' >> ~/.bashrc
 export PATH="$HOME/.local/node/bin:$PATH"
 hash -r
 ```
 
-Adjust the archive path if your browser saved it somewhere other than
-`~/Downloads`, and append the `export` line to `~/.zshrc` instead if your
-shell is Zsh. Unpacking `.tar.xz` needs the `xz` tools, packaged as
-`xz-utils` on Debian/Ubuntu and `xz` on Fedora and Arch. Prepending that
-directory to `PATH` is what stops an older distribution `nodejs` package
-from shadowing the new one; this is your own Node.js setup, and Open Clowk
-never writes a shell startup file for you. Run the step 2 checks again
-before continuing.
+The first command lists the archives you actually have; copy that one file
+name into the second line, and if more than one is listed, pick only the
+single build matching your CPU architecture. Adjust `~/Downloads` if your
+browser saved the file somewhere else, and use `~/.zshrc` in place of
+`~/.bashrc` if your shell is Zsh. The `grep` guard keeps a rerun from adding
+the line twice, and `printf` starts it on a line of its own. Unpacking
+`.tar.xz` needs the `xz` tools, packaged as `xz-utils` on Debian/Ubuntu and
+`xz` on Fedora and Arch. Prepending that directory to `PATH` is what stops an
+older distribution `nodejs` package from shadowing the new one; this is your
+own Node.js setup, and Open Clowk never writes a shell startup file for you.
+Run the step 2 checks again before continuing.
 
 A distribution may also list `npm` as a separate package even though npm is
 bundled with a normal upstream Node.js installation.
