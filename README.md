@@ -21,9 +21,11 @@ one with `npm install -g`.
 
 ### 1. Install Git and Node.js first
 
-Open Clowk's installer does **not** install Git, Homebrew, a Linux package
-manager, or other system prerequisites. Choose the instructions for your
-platform before running any Open Clowk command.
+Open Clowk's installer does **not** install Git, Homebrew, or a Linux package
+manager. It can ask you — and only ask — whether to run `brew install node`
+when Homebrew already exists; that is the single system package it ever
+installs, and it is described under **Reviewed installer** below. Choose the
+instructions for your platform before running any Open Clowk command.
 
 #### macOS
 
@@ -166,8 +168,8 @@ npm start
 
 The safer convenience path downloads the repository's [`install.sh`](install.sh)
 so you can read the exact script before running it. Complete steps 1 and 2
-above first; the script does not install Git, Homebrew, a Linux package
-manager, or other system prerequisites:
+above first; the script does not install Git, Homebrew, or a Linux package
+manager:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jourdanlucente-maker/open-clowk/main/install.sh -o /tmp/open-clowk-install.sh
