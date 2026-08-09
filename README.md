@@ -287,8 +287,21 @@ npm test
 Headless and deterministic: reminder state machine, target matching,
 platform adapters (fixtures), the full setup→launch→intervention cycle
 through an injected Electron, overlay scene + countdown DOM, static
-no-browser/privacy guards, CLI version agreement. No window opens, no
-socket binds, no permission is requested.
+no-browser/privacy guards, CLI version agreement, and the source installer
+(`install.sh`) driven against a fake `PATH` — Node present/missing/too old,
+Git present/missing with the archive fallback, saved and streamed execution,
+rerun and destination refusal, origin allow-list, and Homebrew
+accept/decline/failure/noninteractive behavior. No window opens, no socket
+binds, no permission is requested, and no real package is ever installed.
+
+**One test-only prerequisite: Python 3** (standard library only, no native
+PTY package). The installer asks for Homebrew consent on `/dev/tty`, so those
+scenarios run the script under a genuine pseudo-terminal via
+`test/helpers/pty-session.py` — a regular file or FIFO would not prove the
+shipped prompt works. macOS and the CI image already ship `python3`; on a slim
+container install it before `npm test`. **Running and installing Open Clowk
+itself needs Node.js only** — Python is never involved at runtime or during
+`install.sh`.
 
 ## Contribute (money version)
 

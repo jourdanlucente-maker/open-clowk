@@ -29,6 +29,7 @@ EXIT_TIMEOUT = 99
 def main():
     env_path, out_path, prompt, answer = sys.argv[1:5]
     command = sys.argv[5:]
+    write_output(out_path, b'')
     with open(env_path) as handle:
         env = json.load(handle)
 

@@ -68,8 +68,14 @@ function runOnPty(f, answer, extra = {}) {
   const result = spawnSync('python3',
     [ptySession, envFile, outFile, BREW_PROMPT, answer, '/bin/bash', script],
     { encoding: 'utf8', detached: true });
-  assert.notStrictEqual(result.status, 99, 'the installer never printed the Homebrew prompt on the pty');
-  return { status: result.status, output: fs.readFileSync(outFile, 'utf8') };
+  assert.ifError(result.error);
+  assert.strictEqual(result.stderr, '', `the pty helper itself failed:\n${result.stderr}`);
+  assert.ok(fs.existsSync(outFile),
+    `the pty helper wrote no output file (exit ${result.status}):\n${result.stderr}`);
+  const output = fs.readFileSync(outFile, 'utf8');
+  assert.notStrictEqual(result.status, 99,
+    `the installer never printed the Homebrew prompt on the pty:\n${output}`);
+  return { status: result.status, output };
 }
 
 function commands(f) {
@@ -80,7 +86,9 @@ try {
   {
     const probe = spawnSync('python3', ['-c', 'import pty'], { encoding: 'utf8' });
     assert.strictEqual(probe.status, 0,
-      'python3 with the pty module is required to exercise the real Homebrew consent terminal');
+      'Python 3 (standard library only) is a documented test-only prerequisite: the Homebrew '
+      + 'consent scenarios need a genuine pseudo-terminal. See the Tests section of README.md. '
+      + 'Running and installing Open Clowk itself needs Node.js only.');
   }
   {
     const source = fs.readFileSync(script, 'utf8');
