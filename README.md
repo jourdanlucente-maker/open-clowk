@@ -70,12 +70,33 @@ sudo pacman -Syu --needed git nodejs npm
 ```
 
 Some Linux distribution repositories provide a Node.js version older than 18.
-The commands above do not promise compatibility. If your version check below
-shows a release older than 18, **stop** and install a current release using
-the [official Node.js download page](https://nodejs.org/en/download), then
-run the checks again. On Linux, a distribution package may list `npm`
-separately even though npm is bundled with a normal upstream Node.js
-installation.
+The commands above do not promise compatibility. If your version check in
+step 2 shows a release older than 18, **stop** and install a current release
+from the [official Node.js download page](https://nodejs.org/en/download).
+That page offers Linux as a binary tarball rather than an installer, so
+download the LTS `.tar.xz` build for your CPU architecture, then unpack it
+into your home directory and put it ahead of the distribution copy on your
+`PATH`:
+
+```sh
+mkdir -p ~/.local/node
+tar -xJf ~/Downloads/node-v*-linux-*.tar.xz -C ~/.local/node --strip-components=1
+echo 'export PATH="$HOME/.local/node/bin:$PATH"' >> ~/.bashrc
+export PATH="$HOME/.local/node/bin:$PATH"
+hash -r
+```
+
+Adjust the archive path if your browser saved it somewhere other than
+`~/Downloads`, and append the `export` line to `~/.zshrc` instead if your
+shell is Zsh. Unpacking `.tar.xz` needs the `xz` tools, packaged as
+`xz-utils` on Debian/Ubuntu and `xz` on Fedora and Arch. Prepending that
+directory to `PATH` is what stops an older distribution `nodejs` package
+from shadowing the new one; this is your own Node.js setup, and Open Clowk
+never writes a shell startup file for you. Run the step 2 checks again
+before continuing.
+
+A distribution may also list `npm` as a separate package even though npm is
+bundled with a normal upstream Node.js installation.
 
 ### 2. Verify the prerequisites
 
@@ -86,18 +107,22 @@ Node.js reports v18 or newer:
 git --version
 node --version
 npm --version
-node -e 'const major = Number(process.versions.node.split(".")[0]); if (major < 18) { console.error("Stop: Open Clowk requires Node.js 18 or newer."); process.exit(1); }'
+node -e 'const major = Number(process.versions.node.split(".")[0]); if (major < 18) { console.error("Stop: Open Clowk requires Node.js 18 or newer."); process.exit(1); } else { console.log("Node.js version OK."); }'
 ```
 
-If any command fails, or the last command exits with an error, fix the
-prerequisite installation before continuing. This guide does not support
+The last command prints `Node.js version OK.` when the version is high
+enough. If any command fails, or that last command reports a stop instead,
+fix the prerequisite installation before continuing. This guide does not support
 `npm install -g open-clowk`; there is no published npm package.
 
 ### 3. Obtain Open Clowk
 
-Now choose one source path. The normal Git path is:
+Now choose one source path. Both start with `cd ~` so the source lands in
+your home directory instead of wherever the terminal happens to be. The
+normal Git path is:
 
 ```sh
+cd ~
 git clone https://github.com/jourdanlucente-maker/open-clowk.git
 cd open-clowk
 ```
@@ -107,6 +132,7 @@ the official [`main` source archive](https://github.com/jourdanlucente-maker/ope
 unpack it, and enter the extracted directory:
 
 ```sh
+cd ~
 curl -fL https://github.com/jourdanlucente-maker/open-clowk/archive/refs/heads/main.tar.gz -o /tmp/open-clowk-main.tar.gz
 tar -xzf /tmp/open-clowk-main.tar.gz
 cd open-clowk-main
@@ -155,9 +181,9 @@ The script uses Git when available. Without Git it downloads GitHub's official
 `main` source archive with `curl`. It validates Node 18+ and npm first, runs
 `npm ci`, then launches an attached `npm start`; closing the app or pressing
 Ctrl-C returns control to that terminal. Every consequential command is shown
-before it runs. If Node.js is missing or too old, it may offer an already
-installed Homebrew a `brew install node` action on macOS; it never installs
-Homebrew or any other system prerequisite itself.
+before it runs. If Node.js is missing or too old, it can offer to run
+`brew install node` when Homebrew is already installed; it never installs
+Homebrew, Git, or any other system prerequisite itself.
 
 ### Fast path (`curl | bash`)
 
