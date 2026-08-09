@@ -81,10 +81,15 @@ Every change after the import commit is a separate, reviewable commit:
   `codex`/`claude` gate matches exactly (`exeMatchIsCaseSensitive` in
   `electron/targets.js` owns that decision), so the `Claude` desktop
   application cannot satisfy a selected Claude Code target.
-- *(this commit)* — documentation matched to the final review round: this
-  commit list split back into one entry per commit, and `SECURITY.md`'s
-  examples of probed executable names written as the normalized names the
-  adapters actually receive.
+- *(closing commit of the MVP round)* — documentation matched to the final
+  review round: this commit list split back into one entry per commit, and
+  `SECURITY.md`'s examples of probed executable names written as the
+  normalized names the adapters actually receive.
+- *(this round)* — developer source install path: a reviewed root
+  `install.sh` for macOS and Linux/X11, its deterministic fake-`PATH` suite
+  (`test/install-script.test.js`, plus the `test/helpers/pty-session.py`
+  pseudo-terminal used for the `/dev/tty` Homebrew consent) wired into
+  `npm test`, and the README **Install and run** section. No product change.
 
 ### Superseded idle-time line (archived, not part of this branch)
 
@@ -98,6 +103,9 @@ Option A) was re-implemented fresh in `assets/README.md`.
 
 ## Open captain decisions (not resolved here)
 
-Sprite redistribution (policy owned by `assets/README.md`), distribution shape,
-npm name, PR #1 fate, and parent-repo reconciliation remain
-captain decisions. Nothing here publishes, packages, signs, or releases anything.
+Sprite redistribution (policy owned by `assets/README.md`), npm name, PR #1
+fate, and parent-repo reconciliation remain captain decisions. Distribution
+shape is no longer open — developer source distribution from this public
+repository is the accepted path; `README.md` → **Distribution status** owns the
+current status and what stays unauthorized. Nothing here publishes, packages,
+signs, or releases a binary.

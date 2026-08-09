@@ -88,12 +88,13 @@ only when Homebrew already exists and it can open your controlling terminal.
 That channel is hard-wired to `/dev/tty` and verified to be a real terminal:
 the prompt is printed there and your typed answer is read back from there.
 No environment variable, flag, redirected file, or piped stdin can supply that
-answer — which is also why the `curl | bash` path can still ask you. Declining,
-running with no controlling terminal, or having no Homebrew stops with a direct
-Node.js download link and leaves system packages unchanged. If you accept and Homebrew then
-fails, the script says so and reports Homebrew's exit status rather than
-claiming nothing changed. It never installs Homebrew or nvm, runs a
-third-party installer, writes a shell profile, or uses `sudo`. If `npm ci`
+answer — which is also why the `curl | bash` path can still ask you. Declining
+stops right there and leaves system packages unchanged; having no Homebrew, or
+no controlling terminal, stops the same way and points you at a direct Node.js
+download link. If you accept and Homebrew then fails, the script says so and
+reports Homebrew's exit status rather than claiming nothing changed. It never
+installs Homebrew or nvm, runs a third-party installer, writes a shell profile,
+or uses `sudo`. If `npm ci`
 fails, fix the reported dependency/network problem and rerun; the app is not
 launched after a failed install.
 

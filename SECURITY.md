@@ -44,7 +44,10 @@ Two identity signals, both name-only:
   environments (e.g. Linux/Wayland) get a clear compatibility message.
 - No login persistence and no global install. Preferences persist locally in
   `~/.open-clowk/prefs.json`; the joke CLI keeps its ledger in
-  `~/.open-clowk/ledger.json`. Nothing else is written outside the project.
+  `~/.open-clowk/ledger.json`. The running app writes nothing else outside the
+  project. (The optional source installer places the checkout itself in a
+  user-owned directory and uses no `sudo`, global npm install, or shell-profile
+  write — README → **Install and run** owns that contract.)
 
 ## Network surface
 
