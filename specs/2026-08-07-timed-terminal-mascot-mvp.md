@@ -24,6 +24,17 @@ A developer using terminals, Codex/Claude Code, or a common IDE on macOS, Window
 - ✗ Configurable break lengths, streaks, analytics, accounts, sync, telemetry, cloud services, or launch-at-login.
 - ✗ Public release, sprite redistribution, app-store submission, signing, notarization, or production installer publication; those remain separate approvals.
 
+> **2026-08-08 — partial supersession of the last bullet.** The wording above
+> is preserved as the 2026-08-07 approval record. On 2026-08-08 the captain
+> approved exactly one of those separate approvals: **public developer source
+> distribution from the repository, plus the reviewed root `install.sh`**.
+> Binary packaging, signing/notarization, npm publication, GitHub binary
+> releases, sprite publication/redistribution, launch at login, and broader
+> release work remain unauthorized. Current authority lives in
+> [`README.md` → Distribution status](../README.md#distribution-status) and
+> [`AGENTS.md`](../AGENTS.md); this spec is not the place to look up
+> distribution state.
+
 ## Smallest shippable version
 A private native Electron build with one interval control, a supported-target checklist, one **Launch** button, the existing mascot overlay, and the three intervention actions. Preferences may persist locally, but the app starts only when the user launches it.
 
