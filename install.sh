@@ -30,16 +30,14 @@ offer_brew_node() {
   [ -r "$TTY_PATH" ] && [ -w "$TTY_PATH" ] || return 1
 
   say "Homebrew is already installed. Open Clowk can ask it to install Node.js."
-  local answer
-  if [ "${OPEN_CLOWK_TESTING:-0}" = "1" ]; then
-    answer="${OPEN_CLOWK_TEST_CONFIRM:-}"
-  else
-    printf 'Run brew install node now? [y/N] ' >"$TTY_PATH"
-    IFS= read -r answer <"$TTY_PATH" || answer=""
-  fi
+  local answer=""
+  printf 'Run brew install node now? [y/N] ' >>"$TTY_PATH"
+  IFS= read -r answer <"$TTY_PATH" || answer=""
   case "$answer" in
     y|Y|yes|YES|Yes)
-      run brew install node
+      local brew_status=0
+      run brew install node || brew_status=$?
+      [ "$brew_status" -eq 0 ] || die "brew install node failed with exit status $brew_status. Homebrew was invoked, so system packages may have changed; read the Homebrew output above, fix the reported problem, then rerun."
       ;;
     *)
       die "Node.js installation declined. Install Node.js 18+ and rerun this script."
@@ -89,6 +87,18 @@ require_platform() {
   esac
 }
 
+is_open_clowk_origin() {
+  local url="${1:-}"
+  url="${url%/}"
+  url="${url%.git}"
+  case "$url" in
+    https://github.com/jourdanlucente-maker/open-clowk) return 0 ;;
+    git@github.com:jourdanlucente-maker/open-clowk) return 0 ;;
+    ssh://git@github.com/jourdanlucente-maker/open-clowk) return 0 ;;
+  esac
+  return 1
+}
+
 prepare_with_git() {
   if [ ! -e "$SOURCE_DIR" ]; then
     run mkdir -p "$(dirname "$SOURCE_DIR")"
@@ -99,10 +109,7 @@ prepare_with_git() {
   [ -d "$SOURCE_DIR/.git" ] || die "destination already exists and is not a Git checkout: $SOURCE_DIR. Move it aside or choose OPEN_CLOWK_SOURCE_DIR. Nothing was changed."
   local origin
   origin="$(git -C "$SOURCE_DIR" remote get-url origin 2>/dev/null || true)"
-  case "$origin" in
-    "$REPO_URL"|https://github.com/jourdanlucente-maker/open-clowk) ;;
-    *) die "destination is an unknown Git checkout (origin: ${origin:-missing}): $SOURCE_DIR. Nothing was changed." ;;
-  esac
+  is_open_clowk_origin "$origin" || die "destination is an unknown Git checkout (origin: ${origin:-missing}): $SOURCE_DIR. Only this repository's own HTTPS or SSH GitHub origin is updated. Nothing was changed."
   [ -z "$(git -C "$SOURCE_DIR" status --porcelain)" ] || die "destination has local changes: $SOURCE_DIR. Commit, move, or clean them yourself; nothing was stashed, reset, or overwritten."
 
   say "Existing clean Open Clowk checkout found. Updating it with a fast-forward only."

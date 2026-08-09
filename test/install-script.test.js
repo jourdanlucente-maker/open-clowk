@@ -32,14 +32,14 @@ function fixture(options = {}) {
     executable(path.join(bin, 'node'), `case "\${1:-}" in -p) echo "${options.node || 22}";; --version) echo "v${options.node || 22}.0.0";; esac`);
   }
   if (options.git !== false) {
-    executable(path.join(bin, 'git'), `echo "git $*" >> "$FAKE_LOG"\nif [ "\${1:-}" = clone ]; then mkdir -p "$6/.git"; exit 0; fi\nif [ "\${1:-}" = -C ]; then\n  case "\${3:-}" in remote) echo "https://github.com/jourdanlucente-maker/open-clowk.git";; status) [ "\${FAKE_DIRTY:-0}" = 1 ] && echo dirty;; esac\nfi`);
+    executable(path.join(bin, 'git'), `echo "git $*" >> "$FAKE_LOG"\nif [ "\${1:-}" = clone ]; then mkdir -p "$6/.git"; exit 0; fi\nif [ "\${1:-}" = -C ]; then\n  case "\${3:-}" in\n    remote) echo "\${FAKE_ORIGIN:-https://github.com/jourdanlucente-maker/open-clowk.git}";;\n    status) if [ "\${FAKE_DIRTY:-0}" = 1 ]; then echo dirty; fi;;\n  esac\nfi`);
   }
   if (options.curl) {
     executable(path.join(bin, 'curl'), `echo "curl $*" >> "$FAKE_LOG"\n: > "$4"`);
     executable(path.join(bin, 'tar'), `echo "tar $*" >> "$FAKE_LOG"\nmkdir -p "$4/open-clowk-main"`);
   }
   if (options.brew) {
-    executable(path.join(bin, 'brew'), `echo "brew $*" >> "$FAKE_LOG"\nif [ "\${1:-}" = install ]; then cp "$FAKE_NODE_AFTER_BREW" "$FAKE_BIN/node"; chmod +x "$FAKE_BIN/node"; fi`);
+    executable(path.join(bin, 'brew'), `echo "brew $*" >> "$FAKE_LOG"\nif [ "\${1:-}" = install ]; then\n  if [ "\${FAKE_BREW_EXIT:-0}" != 0 ]; then exit "$FAKE_BREW_EXIT"; fi\n  cp "$FAKE_NODE_AFTER_BREW" "$FAKE_BIN/node"\n  chmod +x "$FAKE_BIN/node"\nfi`);
   }
   const env = {
     PATH: bin, HOME: home, OPEN_CLOWK_SOURCE_DIR: destination,
@@ -57,6 +57,12 @@ function commands(f) {
 }
 
 try {
+  {
+    const source = fs.readFileSync(script, 'utf8');
+    assert.doesNotMatch(source, /OPEN_CLOWK_TESTING|OPEN_CLOWK_TEST_CONFIRM/,
+      'install.sh must not carry an environment hook that bypasses the brew confirmation');
+    assert.doesNotMatch(source, /sudo|nvm|curl[^\n]*\|\s*(ba)?sh|npm (install|i) -g|\.(bash|zsh)(rc|_profile)/);
+  }
   {
     const f = fixture();
     const result = run(f);
@@ -132,7 +138,17 @@ try {
     const f = fixture({ node: false, brew: true });
     const tty = path.join(f.root, 'tty');
     fs.writeFileSync(tty, 'n\n');
-    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty, OPEN_CLOWK_TESTING: '1', OPEN_CLOWK_TEST_CONFIRM: 'n' });
+    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty });
+    assert.notStrictEqual(result.status, 0);
+    assert.match(result.stderr, /declined/);
+    assert.doesNotMatch(commands(f), /brew install/);
+    assert.match(fs.readFileSync(tty, 'utf8'), /Run brew install node now\? \[y\/N\]/);
+  }
+  {
+    const f = fixture({ node: false, brew: true });
+    const tty = path.join(f.root, 'tty');
+    fs.writeFileSync(tty, '\n');
+    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty });
     assert.notStrictEqual(result.status, 0);
     assert.match(result.stderr, /declined/);
     assert.doesNotMatch(commands(f), /brew install/);
@@ -143,9 +159,49 @@ try {
     fs.writeFileSync(tty, 'y\n');
     const after = path.join(f.root, 'node-after-brew');
     executable(after, 'case "${1:-}" in -p) echo 22;; --version) echo v22.0.0;; esac');
-    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty, OPEN_CLOWK_TESTING: '1', OPEN_CLOWK_TEST_CONFIRM: 'y', FAKE_NODE_AFTER_BREW: after });
+    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty, FAKE_NODE_AFTER_BREW: after });
     assert.strictEqual(result.status, 0, result.stderr);
     assert.match(commands(f), /brew install node/);
+    assert.match(fs.readFileSync(tty, 'utf8'), /Run brew install node now\? \[y\/N\]/);
+  }
+  {
+    const f = fixture({ node: false, brew: true });
+    const tty = path.join(f.root, 'tty');
+    fs.writeFileSync(tty, 'y\n');
+    const result = run(f, { OPEN_CLOWK_TTY_PATH: tty, FAKE_BREW_EXIT: '3' });
+    assert.notStrictEqual(result.status, 0);
+    assert.match(commands(f), /brew install node/);
+    assert.match(result.stderr, /brew install node failed with exit status 3/);
+    assert.match(result.stderr, /system packages may have changed/);
+    assert.doesNotMatch(result.stderr, /No system packages were changed/);
+    assert.doesNotMatch(commands(f), /npm ci/);
+  }
+  for (const origin of [
+    'https://github.com/jourdanlucente-maker/open-clowk.git',
+    'https://github.com/jourdanlucente-maker/open-clowk',
+    'https://github.com/jourdanlucente-maker/open-clowk/',
+    'git@github.com:jourdanlucente-maker/open-clowk.git',
+    'git@github.com:jourdanlucente-maker/open-clowk',
+    'ssh://git@github.com/jourdanlucente-maker/open-clowk.git',
+  ]) {
+    const f = fixture({ env: { FAKE_ORIGIN: origin } });
+    fs.mkdirSync(path.join(f.destination, '.git'), { recursive: true });
+    const result = run(f);
+    assert.strictEqual(result.status, 0, `${origin}: ${result.stderr}`);
+    assert.match(commands(f), /git -C .* merge --ff-only origin\/main/);
+  }
+  for (const origin of [
+    'https://github.com/someone-else/open-clowk.git',
+    'git@github.com:someone-else/open-clowk.git',
+    'https://gitlab.com/jourdanlucente-maker/open-clowk.git',
+    'https://github.com/jourdanlucente-maker/open-clowk-fork.git',
+  ]) {
+    const f = fixture({ env: { FAKE_ORIGIN: origin } });
+    fs.mkdirSync(path.join(f.destination, '.git'), { recursive: true });
+    const result = run(f);
+    assert.notStrictEqual(result.status, 0, origin);
+    assert.match(result.stderr, /unknown Git checkout/);
+    assert.doesNotMatch(commands(f), /fetch|merge|npm ci/);
   }
   {
     const f = fixture({ env: { FAKE_NPM_CI_EXIT: '7' } });

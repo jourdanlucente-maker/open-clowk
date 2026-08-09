@@ -74,25 +74,34 @@ not acceptable.
 
 On rerun, the installer updates only a recognized, clean Open Clowk Git
 checkout, using `fetch` plus a fast-forward-only merge before another
-`npm ci`. It refuses an unknown destination, a checkout with local changes,
-or an existing archive install. It never overwrites, deletes, resets, stashes,
-or pulls through those directories. Move the directory aside, choose a new
-`OPEN_CLOWK_SOURCE_DIR`, or resolve local Git changes yourself and rerun.
+`npm ci`. "Recognized" means this repository's own GitHub origin, over HTTPS
+(`https://github.com/jourdanlucente-maker/open-clowk`) or SSH
+(`git@github.com:jourdanlucente-maker/open-clowk`), with or without a `.git`
+suffix or trailing slash — any other origin is refused. It also refuses an
+unknown destination, a checkout with local changes, or an existing archive
+install. It never overwrites, deletes, resets, stashes, or pulls through those
+directories. Move the directory aside, choose a new `OPEN_CLOWK_SOURCE_DIR`,
+or resolve local Git changes yourself and rerun.
 
 If Node is missing or older than 18, the script can offer `brew install node`
-only when Homebrew already exists and an interactive terminal is available.
-Declining, running noninteractively, or having no Homebrew stops with a direct
-Node.js download link and leaves system packages unchanged. It never installs
-Homebrew or nvm, runs a third-party installer, writes a shell profile, or uses
-`sudo`. If `npm ci` fails, fix the reported dependency/network problem and
-rerun; the app is not launched after a failed install.
+only when Homebrew already exists and an interactive terminal is available: it
+prints the prompt to that terminal and reads your typed answer, with no
+environment variable or flag that answers on your behalf. Declining, running
+noninteractively, or having no Homebrew stops with a direct Node.js download
+link and leaves system packages unchanged. If you accept and Homebrew then
+fails, the script says so and reports Homebrew's exit status rather than
+claiming nothing changed. It never installs Homebrew or nvm, runs a
+third-party installer, writes a shell profile, or uses `sudo`. If `npm ci`
+fails, fix the reported dependency/network problem and rerun; the app is not
+launched after a failed install.
 
 On macOS, the first foreground check asks for Automation permission to read
 the frontmost application's **name** through System Events; denying it prevents
 targeted reminders and is reported in the setup window. Linux support is X11
-only: Wayland is detected and refused, with no fallback. Windows has no install
-script here; its runtime adapter remains fixture-tested only, with no claim of
-real Windows runtime evidence.
+only: Wayland is detected and refused, with no fallback. Be aware that **only
+macOS is runtime-verified**: the Linux/X11 adapter this installer sets up, like
+the Windows one, is **fixture-tested only**, with no claim of real Linux or
+Windows runtime evidence. Windows additionally has no install script here.
 
 ## What is this
 
